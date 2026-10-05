@@ -1,0 +1,10 @@
+node_modules
+dist
+*.local
+.env
+.env.*
+!.env.example
+.studio/
+Style Ideas - Inspiration/
+remove meta example/
+DA-REPLACEMENT-CURSOR-PLAN.md

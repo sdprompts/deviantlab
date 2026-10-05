@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --color-lab: #09090b;
+  --color-lab-panel: #101012;
+  --color-lab-line: rgba(255, 255, 255, 0.08);
+  --color-da: #05cc47;
+}
+
+html {
+  color-scheme: dark;
+  background: #09090b;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #09090b;
+  font-family: var(--font-sans);
+  color: #f4f4f5;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2a2e transparent;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
