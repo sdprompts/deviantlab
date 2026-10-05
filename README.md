@@ -154,3 +154,5 @@ The PNG DeviantLab uses at send time is `.studio/watermark.png`. `.studio/` is g
 - Only files dropped in DeviantLab are queued. Nothing else in Sta.sh is listed or published.
 - Unpublished files are submitted to Sta.sh and then published. DeviantArt’s public API does not offer a separate Studio-draft write.
 - After a DeviantArt rate-limit response, wait 15 minutes before trying again. Refreshing sooner extends the pause.
+
+[![Support me on Ko-fi](https://img.shields.io/badge/Support%20me%20on%20Ko--fi-05cc47?style=for-the-badge&logo=kofi&logoColor=black)](https://ko-fi.com/H2H514IXI3)
