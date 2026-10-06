@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { PageHeader } from "../components/PageHeader";
+import { useLab } from "../lab";
+import { folderLabel, loadGalleryFolders, type GalleryFolder } from "../lib/da/folders";
 import { clearLocalStash } from "../lib/da/stash";
 import { clearQueueHistory } from "../lib/studio/queueClient";
 import {
@@ -12,11 +14,14 @@ import {
   type VisionProvider,
   type WatermarkCorner,
   markWidthOf,
+  temperatureOf,
+  visionForProvider,
 } from "../lib/settings";
 
 const field = "h-8 w-full rounded-md border border-lab-line bg-lab px-3 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-zinc-500";
 
 export function SettingsPage() {
+  const { session } = useLab();
   const [settings, setSettings] = useState(() => readSettings());
   const [watermark, setWatermark] = useState(() => readWatermark());
   const [minutes, setMinutes] = useState(() => String(readSettings().scheduleMinutes));
@@ -28,9 +33,69 @@ export function SettingsPage() {
   const [removeFiles, setRemoveFiles] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [historyNote, setHistoryNote] = useState("");
+  const [clips, setClips] = useState<string[]>([]);
+  const [clipNote, setClipNote] = useState("");
+  const [creativity, setCreativity] = useState(() => readSettings().visionTemperature);
+  const [folders, setFolders] = useState<GalleryFolder[]>([]);
+
+  useEffect(() => {
+    if (!session) {
+      setFolders([]);
+      return;
+    }
+    let cancel = false;
+    void loadGalleryFolders(session.username).then((list) => {
+      if (!cancel) setFolders(list);
+    }).catch(() => {
+      if (!cancel) setFolders([]);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [session]);
+
+  async function loadClips(base: string) {
+    try {
+      const response = await fetch(`/da-vision/clips?base=${encodeURIComponent(base)}`);
+      const body = (await response.json()) as { clips?: string[]; error_description?: string };
+      if (!response.ok) {
+        setClips([]);
+        setClipNote(body.error_description || "ComfyUI is not running.");
+        return;
+      }
+      const names = body.clips ?? [];
+      setClips(names);
+      setClipNote(names.length ? "" : "ComfyUI has no CLIP files.");
+    } catch {
+      setClips([]);
+      setClipNote("ComfyUI is not running.");
+    }
+  }
+
+  useEffect(() => {
+    setSettings(readSettings());
+  }, [settings.visionProvider]);
+
+  useEffect(() => {
+    if (settings.visionProvider !== "comfyui") return;
+    void loadClips(settings.visionBaseUrl);
+  }, [settings.visionProvider]);
 
   function save<K extends keyof ReturnType<typeof readSettings>>(key: K, value: ReturnType<typeof readSettings>[K]) {
     updateSettings({ [key]: value });
+    setSettings(readSettings());
+  }
+
+  function saveModel(model: string) {
+    updateSettings({
+      visionModel: model,
+      visionModels: { ...settings.visionModels, [settings.visionProvider]: model },
+    });
+    setSettings(readSettings());
+  }
+
+  function chooseProvider(next: VisionProvider) {
+    updateSettings(visionForProvider(settings, next));
     setSettings(readSettings());
   }
 
@@ -83,6 +148,24 @@ export function SettingsPage() {
             <DefaultToggle label="Mature" on={settings.publishMature} onClick={() => save("publishMature", !settings.publishMature)} />
             <DefaultToggle label="AI generated" on={settings.publishAi} onClick={() => save("publishAi", !settings.publishAi)} />
             <DefaultToggle label="Do not include in third-party AI datasets" on={settings.publishNoai} onClick={() => save("publishNoai", !settings.publishNoai)} />
+            <label className="block pt-1 text-[12px] text-zinc-400">
+              Default folder
+              <select
+                value={settings.defaultFolder}
+                onChange={(event) => save("defaultFolder", event.target.value)}
+                className={`mt-1 ${field}`}
+              >
+                <option value="featured">Featured</option>
+                <option value="none">None</option>
+                {folders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>{folderLabel(folder, folders)}</option>
+                ))}
+                {settings.defaultFolder !== "featured" && settings.defaultFolder !== "none" && !folders.some((folder) => folder.id === settings.defaultFolder) ? (
+                  <option value={settings.defaultFolder}>Saved folder</option>
+                ) : null}
+              </select>
+              <span className="mt-1 block text-zinc-500">{session ? "Checked on each new upload. You can change it on that file." : "Sign in to choose one of your gallery folders."}</span>
+            </label>
           </div>
           </Section>
           <Section title="Titles and tags">
@@ -94,7 +177,7 @@ export function SettingsPage() {
                   Provider
                   <select
                     value={settings.visionProvider}
-                    onChange={(event) => save("visionProvider", event.target.value as VisionProvider)}
+                    onChange={(event) => chooseProvider(event.target.value as VisionProvider)}
                     className={`mt-1 ${field}`}
                   >
                     <option value="openrouter">OpenRouter</option>
@@ -103,41 +186,112 @@ export function SettingsPage() {
                     <option value="claude">Claude</option>
                     <option value="grok">Grok</option>
                     <option value="gemini">Gemini</option>
+                    <option value="comfyui">ComfyUI</option>
                   </select>
                 </label>
-                <label className="text-[12px] text-zinc-400">
-                  Model id
-                  <input
-                    value={settings.visionModel}
-                    onChange={(event) => save("visionModel", event.target.value)}
-                    placeholder={visionGuide(settings.visionProvider).models[0]?.id}
-                    className={`mt-1 ${field}`}
-                  />
-                </label>
+                {settings.visionProvider === "comfyui" ? (
+                  <label className="text-[12px] text-zinc-400">
+                    CLIP model
+                    {clips.length ? (
+                      <select
+                        value={settings.visionModel}
+                        onChange={(event) => saveModel(event.target.value)}
+                        className={`mt-1 ${field}`}
+                      >
+                        <option value="">Choose a vision model</option>
+                        {(settings.visionModel && !clips.includes(settings.visionModel) ? [settings.visionModel, ...clips] : clips).map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        value={settings.visionModel}
+                        onChange={(event) => saveModel(event.target.value)}
+                        placeholder="qwen3vl_4b_bf16.safetensors"
+                        className={`mt-1 ${field}`}
+                      />
+                    )}
+                  </label>
+                ) : (
+                  <label className="text-[12px] text-zinc-400">
+                    Model id
+                    <input
+                      value={settings.visionModel}
+                      onChange={(event) => saveModel(event.target.value)}
+                      placeholder={visionGuide(settings.visionProvider).models[0]?.id}
+                      className={`mt-1 ${field}`}
+                    />
+                  </label>
+                )}
               </div>
-              <div className="space-y-1.5">
-                <p className="text-[12px] text-zinc-500">Suggestions for this provider. A click fills the model id. The provider does not fill it for you.</p>
-                {visionGuide(settings.visionProvider).models.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => save("visionModel", item.id)}
-                    className={`block w-full rounded-md border px-2.5 py-1.5 text-left ${settings.visionModel === item.id ? "border-da" : "border-lab-line hover:border-zinc-500"}`}
-                  >
-                    <span className="block text-[12px] font-medium text-zinc-100">{item.id}</span>
-                    <span className="block text-[12px] text-zinc-500">{item.why}</span>
-                  </button>
-                ))}
-              </div>
+              {settings.visionProvider === "comfyui" ? (
+                <div className="space-y-1.5">
+                  {clipNote ? <p className="text-[12px] text-zinc-500">{clipNote}</p> : null}
+                  <p className="text-[12px] text-zinc-500">The list is every model in your text encoders folder. You have to select a vision model. A click below fills the CLIP model. Put the download in ComfyUI’s models/text_encoders folder.</p>
+                  {visionGuide("comfyui").models.map((item) => (
+                    <div key={item.id} className={`rounded-md border ${settings.visionModel === item.id ? "border-da" : "border-lab-line"}`}>
+                      <button
+                        type="button"
+                        onClick={() => saveModel(item.id)}
+                        className="block w-full px-2.5 py-1.5 text-left"
+                      >
+                        <span className="block text-[12px] font-medium text-zinc-100">{item.id}</span>
+                        <span className="block text-[12px] text-zinc-500">{item.why}</span>
+                      </button>
+                      {item.href ? (
+                        <a href={item.href} target="_blank" rel="noreferrer" className="block px-2.5 pb-1.5 text-[12px] text-da">Download</a>
+                      ) : null}
+                    </div>
+                  ))}
+                  <label className="block text-[12px] text-zinc-400">
+                    <span className="flex items-center justify-between">
+                      Creativity
+                      <span className="text-zinc-200">{creativity.toFixed(2)}</span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0.01}
+                      max={2}
+                      step={0.01}
+                      value={creativity}
+                      onChange={(event) => setCreativity(temperatureOf(Number(event.target.value)))}
+                      onPointerUp={(event) => save("visionTemperature", temperatureOf(Number(event.currentTarget.value)))}
+                      onKeyUp={(event) => save("visionTemperature", temperatureOf(Number(event.currentTarget.value)))}
+                      onBlur={(event) => save("visionTemperature", temperatureOf(Number(event.currentTarget.value)))}
+                      className="mt-2 w-full accent-da"
+                    />
+                  </label>
+                  <p className="text-[12px] text-zinc-500">Lower stays closer to the picture. Higher varies the title and tags. ComfyUI has to be running. Each tag is joined into one word, and spaces, hyphens, and other special characters are removed.</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <p className="text-[12px] text-zinc-500">Suggestions for this provider. A click fills the model id. The provider does not fill it for you.</p>
+                  {visionGuide(settings.visionProvider).models.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => saveModel(item.id)}
+                      className={`block w-full rounded-md border px-2.5 py-1.5 text-left ${settings.visionModel === item.id ? "border-da" : "border-lab-line hover:border-zinc-500"}`}
+                    >
+                      <span className="block text-[12px] font-medium text-zinc-100">{item.id}</span>
+                      <span className="block text-[12px] text-zinc-500">{item.why}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <label className="block text-[12px] text-zinc-400">
                 Base URL
                 <input
                   value={settings.visionBaseUrl}
                   onChange={(event) => save("visionBaseUrl", event.target.value)}
-                  placeholder={settings.visionProvider === "claude" ? "Ignored for Claude" : "Blank uses the provider default"}
+                  onBlur={(event) => {
+                    if (settings.visionProvider === "comfyui") void loadClips(event.currentTarget.value);
+                  }}
+                  placeholder={settings.visionProvider === "claude" ? "Ignored for Claude" : settings.visionProvider === "comfyui" ? "Blank uses http://127.0.0.1:8188" : "Blank uses the provider default"}
                   className={`mt-1 ${field}`}
                 />
               </label>
+              {settings.visionProvider === "comfyui" ? null : (
               <label className="block text-[12px] text-zinc-400">
                 {visionGuide(settings.visionProvider).keyLabel}
                 <input
@@ -149,6 +303,7 @@ export function SettingsPage() {
                   className={`mt-1 ${field} disabled:opacity-50`}
                 />
               </label>
+              )}
             </>
           ) : null}
           </Section>
@@ -391,7 +546,7 @@ async function composeWatermarkPreview(file: File, markUrl: string, corner: stri
   }
 }
 
-function visionGuide(provider: VisionProvider): { models: { id: string; why: string }[]; keyLabel: string } {
+function visionGuide(provider: VisionProvider): { models: { id: string; why: string; href?: string }[]; keyLabel: string } {
   switch (provider) {
     case "gemini":
       return {
@@ -442,6 +597,15 @@ function visionGuide(provider: VisionProvider): { models: { id: string; why: str
           { id: "grok-4.7", why: "When 4.3 titles are flat. About $2 per million input tokens." },
         ],
         keyLabel: "API key from the xAI console",
+      };
+    case "comfyui":
+      return {
+        models: [
+          { id: "qwen3vl_4b_fp8_scaled.safetensors", why: "Low VRAM. Qwen3-VL 4B vision model. FP8 file, 5.2 GB.", href: "https://huggingface.co/Comfy-Org/Qwen3-VL/blob/main/text_encoders/qwen3vl_4b_fp8_scaled.safetensors" },
+          { id: "qwen3vl_4b_bf16.safetensors", why: "Medium VRAM. Qwen3-VL 4B vision model. BF16 file, 8.9 GB.", href: "https://huggingface.co/Comfy-Org/Qwen3-VL/blob/main/text_encoders/qwen3vl_4b_bf16.safetensors" },
+          { id: "qwen3vl_8b_fp8_scaled.safetensors", why: "16 GB VRAM. Qwen3-VL 8B vision model. FP8 file, 10.6 GB.", href: "https://huggingface.co/Comfy-Org/Qwen3-VL/blob/main/text_encoders/qwen3vl_8b_fp8_scaled.safetensors" },
+        ],
+        keyLabel: "",
       };
   }
 }

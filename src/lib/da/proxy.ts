@@ -3,7 +3,7 @@ import type { Plugin } from "vite";
 import { DA_CLIENT_ID, DA_REDIRECT_URI } from "./app";
 import { DA_CLIENT_SECRET } from "./appSecret";
 import { handleQueue, refreshStoredSession, startQueue } from "../studio/queueServer";
-import { runVision, type VisionRequest } from "../studio/visionServer";
+import { listComfyClips, runVision, type VisionRequest } from "../studio/visionServer";
 
 const USER_AGENT = "DeviantLab/0.1 (dev)";
 
@@ -113,6 +113,19 @@ async function proxyToken(req: IncomingMessage, res: ServerResponse, env: Record
 }
 
 async function proxyVision(req: IncomingMessage, res: ServerResponse) {
+  const path = (req.url || "").split("?")[0];
+  if (req.method === "GET" && path === "/da-vision/clips") {
+    const base = new URL(req.url || "", "http://localhost").searchParams.get("base") || "";
+    try {
+      sendJson(res, 200, { clips: await listComfyClips(base) });
+    } catch (error) {
+      sendJson(res, 502, {
+        error: "comfy",
+        error_description: error instanceof Error ? error.message : "ComfyUI is not running.",
+      });
+    }
+    return;
+  }
   if (req.method !== "POST") {
     sendJson(res, 405, { error: "method" });
     return;

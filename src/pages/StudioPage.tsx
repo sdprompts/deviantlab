@@ -19,6 +19,7 @@ import {
   removeQueuedPost,
   reorderQueue,
   publishQueuedNow,
+  retitleQueuedPost,
   retryQueuedPost,
   setQueuePaused,
   submitToStudio,
@@ -486,6 +487,7 @@ function QueueRow({
   const [ai, setAi] = useState(post.ai !== false);
   const [noai, setNoai] = useState(post.noai === true);
   const [galleries, setGalleries] = useState<string[]>(post.galleries ?? []);
+  const [feature, setFeature] = useState(post.feature !== false);
   const [rowError, setRowError] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [confirm, setConfirm] = useState<null | "publish" | "remove">(null);
@@ -499,11 +501,16 @@ function QueueRow({
     setAi(post.ai !== false);
     setNoai(post.noai === true);
     setGalleries(post.galleries ?? []);
-  }, [post.id, post.status, post.title, post.tags, post.mature, post.ai, post.noai, (post.galleries ?? []).join(",")]);
+    setFeature(post.feature !== false);
+  }, [post.id, post.status, post.title, post.tags, post.mature, post.ai, post.noai, post.feature, (post.galleries ?? []).join(",")]);
 
-  async function save(flags = { mature, ai, noai, galleries }) {
+  function flags(patch: Partial<{ mature: boolean; ai: boolean; noai: boolean; galleries: string[]; feature: boolean }> = {}) {
+    return { mature, ai, noai, galleries, feature, ...patch };
+  }
+
+  async function save(next = flags()) {
     if (locked) return;
-    await updateQueuedPost(post.id, title, tags, flags);
+    await updateQueuedPost(post.id, title, tags, next);
   }
 
   async function approve() {
@@ -515,6 +522,16 @@ function QueueRow({
       onChanged();
     } catch (err) {
       setRowError(err instanceof Error ? err.message : "Save a title and some tags first.");
+    }
+  }
+
+  async function regenerate() {
+    setRowError("");
+    try {
+      await retitleQueuedPost(post.id);
+      onChanged();
+    } catch (err) {
+      setRowError(err instanceof Error ? err.message : "Could not regenerate the title.");
     }
   }
 
@@ -658,7 +675,7 @@ function QueueRow({
           <div className={`flex gap-x-4 gap-y-2 text-[12px] text-zinc-300 ${layout === "card" ? "flex-col" : "flex-wrap"}`}>
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={mature} onChange={(event) => {
-                const next = { mature: event.target.checked, ai, noai, galleries };
+                const next = flags({ mature: event.target.checked });
                 setMature(next.mature);
                 void save(next);
               }} />
@@ -666,7 +683,7 @@ function QueueRow({
             </label>
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={ai} onChange={(event) => {
-                const next = { mature, ai: event.target.checked, noai, galleries };
+                const next = flags({ ai: event.target.checked });
                 setAi(next.ai);
                 void save(next);
               }} />
@@ -674,7 +691,7 @@ function QueueRow({
             </label>
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={noai} onChange={(event) => {
-                const next = { mature, ai, noai: event.target.checked, galleries };
+                const next = flags({ noai: event.target.checked });
                 setNoai(next.noai);
                 void save(next);
               }} />
@@ -682,9 +699,21 @@ function QueueRow({
             </label>
           </div>
         ) : null}
-        {!locked && !post.studio && folders.length > 0 ? (
+        {!locked && !post.studio ? (
           <fieldset className="max-h-40 space-y-1.5 overflow-y-auto text-[12px] text-zinc-300">
             <legend className="text-[12px] text-zinc-500">Folders</legend>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={feature}
+                onChange={(event) => {
+                  const next = flags({ feature: event.target.checked });
+                  setFeature(next.feature);
+                  void save(next);
+                }}
+              />
+              Featured
+            </label>
             {folders.map((folder) => {
               const checked = galleries.includes(folder.id);
               return (
@@ -694,7 +723,7 @@ function QueueRow({
                     checked={checked}
                     onChange={() => {
                       const nextIds = checked ? galleries.filter((id) => id !== folder.id) : [...galleries, folder.id];
-                      const next = { mature, ai, noai, galleries: nextIds };
+                      const next = flags({ galleries: nextIds });
                       setGalleries(nextIds);
                       void save(next);
                     }}
@@ -708,6 +737,11 @@ function QueueRow({
         {post.error ? <p className="text-[12px] text-zinc-400">{post.error}</p> : null}
         {rowError ? <p className="text-[12px] text-zinc-400">{rowError}</p> : null}
         <div className="mt-auto flex gap-2">
+          {post.status === "review" ? (
+            <button type="button" onClick={() => void regenerate()} className="h-8 rounded-md border border-lab-line px-3 text-[12px] text-zinc-200 hover:border-zinc-500">
+              Regenerate
+            </button>
+          ) : null}
           {post.status === "review" ? (
             <button type="button" onClick={() => void approve()} className="h-8 rounded-md bg-da px-3 text-[12px] font-semibold text-black hover:bg-[#3ad866]">
               {post.studio ? "Send to Stash" : "Add to queue"}

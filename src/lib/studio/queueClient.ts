@@ -20,6 +20,7 @@ export type QueuePost = {
   studio: boolean;
   publishedAt: number;
   galleries: string[];
+  feature: boolean;
 };
 
 export type QueueSnapshot = {
@@ -49,18 +50,20 @@ function sendConfig(body: Record<string, unknown>) {
   }, 400);
 }
 
-export function syncStudioConfig(settings: AppSettings) {
+export function syncStudioConfig(settings: AppSettings, includeVision = false) {
   const body: Record<string, unknown> = {
     scheduleMinutes: settings.scheduleMinutes,
     credit: settings.credit,
     publishMature: settings.publishMature,
     publishAi: settings.publishAi,
     publishNoai: settings.publishNoai,
+    defaultFolder: settings.defaultFolder,
     visionEnabled: settings.visionEnabled,
+    visionTemperature: settings.visionTemperature,
     watermarkCorner: settings.watermarkCorner,
     watermarkWidth: settings.watermarkWidth,
   };
-  if (settings.visionModel.trim()) {
+  if (includeVision || settings.visionModel.trim()) {
     body.visionProvider = settings.visionProvider;
     body.visionModel = settings.visionModel;
     body.visionBaseUrl = settings.visionBaseUrl;
@@ -114,7 +117,7 @@ export async function enqueueStudioFile(file: File, watermark = true, studio = f
   }
 }
 
-export async function updateQueuedPost(id: string, title: string, tags: string, flags: { mature: boolean; ai: boolean; noai: boolean; galleries: string[] }): Promise<void> {
+export async function updateQueuedPost(id: string, title: string, tags: string, flags: { mature: boolean; ai: boolean; noai: boolean; galleries: string[]; feature: boolean }): Promise<void> {
   await fetch(`/da-queue/posts/${id}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
@@ -131,6 +134,14 @@ export async function submitToStudio(id: string): Promise<void> {
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { error_description?: string } | null;
     throw new Error(payload?.error_description || "Could not upload that file.");
+  }
+}
+
+export async function retitleQueuedPost(id: string): Promise<void> {
+  const response = await fetch(`/da-queue/posts/${id}/retitle`, { method: "POST" });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error_description?: string } | null;
+    throw new Error(payload?.error_description || "Could not regenerate the title.");
   }
 }
 

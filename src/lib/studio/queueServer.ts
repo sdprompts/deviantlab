@@ -38,6 +38,7 @@ type PostRow = {
   studio: number;
   published_at: number;
   galleries: string;
+  feature: number;
 };
 
 type StoredSession = {
@@ -57,8 +58,10 @@ type StudioConfig = {
   publishMature: boolean;
   publishAi: boolean;
   publishNoai: boolean;
+  defaultFolder: string;
   watermarkCorner: string;
   watermarkWidth: number;
+  visionTemperature: number;
 };
 
 const configDefaults: StudioConfig = {
@@ -72,8 +75,10 @@ const configDefaults: StudioConfig = {
   publishMature: false,
   publishAi: true,
   publishNoai: false,
+  defaultFolder: "featured",
   watermarkCorner: "bottom-right",
   watermarkWidth: 400,
+  visionTemperature: 0.7,
 };
 
 let db: DatabaseSync | null = null;
@@ -114,6 +119,7 @@ function database(): DatabaseSync {
   if (!names.has("studio")) db.exec("ALTER TABLE posts ADD COLUMN studio INTEGER NOT NULL DEFAULT 0");
   if (!names.has("published_at")) db.exec("ALTER TABLE posts ADD COLUMN published_at INTEGER NOT NULL DEFAULT 0");
   if (!names.has("galleries")) db.exec("ALTER TABLE posts ADD COLUMN galleries TEXT NOT NULL DEFAULT '[]'");
+  if (!names.has("feature")) db.exec("ALTER TABLE posts ADD COLUMN feature INTEGER NOT NULL DEFAULT 1");
   db.exec("UPDATE posts SET published_at = created_at WHERE status = 'published' AND published_at = 0");
   if (addedFlag) {
     const stored = db.prepare("SELECT value FROM kv WHERE key = 'config'").get() as { value?: string } | undefined;
@@ -157,6 +163,12 @@ function cornerOf(value: unknown): string {
   return value === "top-left" || value === "top-right" || value === "bottom-left" || value === "bottom-right" ? value : "bottom-right";
 }
 
+function folderDefaultOf(value: unknown): string {
+  if (value === "none" || value === "featured") return value;
+  if (typeof value === "string" && /^[0-9a-f-]{16,40}$/i.test(value.trim())) return value.trim();
+  return "featured";
+}
+
 function clampMinutes(value: unknown): number {
   const minutes = Math.round(Number(value));
   if (!Number.isFinite(minutes)) return configDefaults.scheduleMinutes;
@@ -171,8 +183,10 @@ function readConfig(): StudioConfig {
       ...parsed,
       scheduleMinutes: clampMinutes(parsed.scheduleMinutes),
       visionEnabled: parsed.visionEnabled !== false,
+      defaultFolder: folderDefaultOf(parsed.defaultFolder),
       watermarkCorner: cornerOf(parsed.watermarkCorner),
       watermarkWidth: markWidthOf(parsed.watermarkWidth),
+      visionTemperature: temperatureOf(parsed.visionTemperature),
     };
   } catch {
     return { ...configDefaults };
@@ -229,7 +243,7 @@ function readRaw(req: IncomingMessage): Promise<Buffer> {
 }
 
 function listPosts(): PostRow[] {
-  return database().prepare("SELECT id, name, status, title, tags, error, itemid, url, deviation_id, created_at, mature, ai, noai, watermark, studio, published_at, galleries FROM posts ORDER BY sort ASC, created_at ASC").all() as PostRow[];
+  return database().prepare("SELECT id, name, status, title, tags, error, itemid, url, deviation_id, created_at, mature, ai, noai, watermark, studio, published_at, galleries, feature FROM posts ORDER BY sort ASC, created_at ASC").all() as PostRow[];
 }
 
 function publicPost(row: PostRow) {
@@ -251,6 +265,7 @@ function publicPost(row: PostRow) {
     studio: Number(row.studio) === 1,
     publishedAt: Number(row.published_at) || 0,
     galleries: parseGalleryIds(row.galleries),
+    feature: Number(row.feature) !== 0,
   };
 }
 
@@ -291,10 +306,16 @@ function titledJpegName(title: string): string {
 function cleanTags(value: string): string[] {
   const seen = new Set<string>();
   for (const part of value.split(/[,\n]/)) {
-    const tag = part.trim().replace(/^#/, "").replace(/[\s_]+/g, "");
-    if (tag && /^[\p{L}\p{N}_-]+$/u.test(tag)) seen.add(tag);
+    const tag = part.trim().replace(/^#+/, "").replace(/[^\p{L}\p{N}]+/gu, "");
+    if (tag) seen.add(tag);
   }
   return [...seen].slice(0, 30);
+}
+
+function temperatureOf(value: unknown): number {
+  const next = Number(value);
+  if (!Number.isFinite(next)) return 0.7;
+  return Math.min(2, Math.max(0.01, Math.round(next * 100) / 100));
 }
 
 async function saveThumb(id: string, bytes: Buffer) {
@@ -311,21 +332,39 @@ async function addFile(name: string, bytes: Buffer, watermark: boolean, studio: 
   await writeFile(path.join(FILES, id), bytes);
   await saveThumb(id, bytes);
   const config = readConfig();
+  const placed = folderDefaultOf(config.defaultFolder);
+  const galleryIds = parseGalleryIds([placed]);
   const now = Date.now();
   database().prepare(
-    "INSERT INTO posts (id, name, status, title, tags, error, itemid, url, deviation_id, created_at, sort, mature, ai, noai, watermark, studio) VALUES (?, ?, 'titling', '', '', '', '', '', '', ?, ?, ?, ?, ?, ?, ?)",
-  ).run(id, name, now, now, config.publishMature ? 1 : 0, config.publishAi ? 1 : 0, config.publishNoai ? 1 : 0, watermark ? 1 : 0, studio ? 1 : 0);
+    "INSERT INTO posts (id, name, status, title, tags, error, itemid, url, deviation_id, created_at, sort, mature, ai, noai, watermark, studio, galleries, feature) VALUES (?, ?, 'titling', '', '', '', '', '', '', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(
+    id,
+    name,
+    now,
+    now,
+    config.publishMature ? 1 : 0,
+    config.publishAi ? 1 : 0,
+    config.publishNoai ? 1 : 0,
+    watermark ? 1 : 0,
+    studio ? 1 : 0,
+    JSON.stringify(galleryIds),
+    placed === "featured" ? 1 : 0,
+  );
   queueTitle(id);
   return id;
 }
 
 let titleChain: Promise<void> = Promise.resolve();
 
-function queueTitle(id: string) {
+const replaceTitles = new Set<string>();
+
+function queueTitle(id: string, replace = false) {
+  if (replace) replaceTitles.add(id);
   titleChain = titleChain.then(() => titleFile(id), () => titleFile(id));
 }
 
 async function titleFile(id: string) {
+  const replace = replaceTitles.delete(id);
   const row = database().prepare("SELECT status FROM posts WHERE id = ?").get(id) as { status?: string } | undefined;
   if (!row || row.status !== "titling") return;
   if (!readConfig().visionEnabled) {
@@ -343,11 +382,12 @@ async function titleFile(id: string) {
       apiKey: config.visionKey,
       imageBase64: small.toString("base64"),
       mediaType: "image/jpeg",
+      temperature: config.visionTemperature,
     });
     const current = database().prepare("SELECT status, title, tags, studio FROM posts WHERE id = ?").get(id) as { status?: string; title?: string; tags?: string; studio?: number } | undefined;
     if (!current || current.status !== "titling") return;
-    const keptTags = cleanTags(current.tags || "").length > 0 ? (current.tags || "") : named.tags.join(", ");
-    const title = current.title?.trim() || named.title;
+    const keptTags = !replace && cleanTags(current.tags || "").length > 0 ? (current.tags || "") : named.tags.join(", ");
+    const title = !replace && current.title?.trim() ? current.title.trim() : named.title;
     if (Number(current.studio) === 1) {
       database().prepare("UPDATE posts SET title = ?, tags = ?, error = '' WHERE id = ? AND status = 'titling'").run(title, keptTags, id);
       await submitStudio(id);
@@ -401,19 +441,33 @@ function safeJson(value: string): unknown {
   }
 }
 
-function patchPost(id: string, title: string, tags: string, flags: { mature: boolean; ai: boolean; noai: boolean; galleries?: string[] }) {
+function patchPost(id: string, title: string, tags: string, flags: { mature: boolean; ai: boolean; noai: boolean; galleries?: string[]; feature?: boolean }) {
   const row = database().prepare("SELECT status FROM posts WHERE id = ?").get(id) as { status?: string } | undefined;
   if (!row || row.status === "published" || row.status === "posting" || row.status === "stashed") return false;
-  database().prepare("UPDATE posts SET title = ?, tags = ?, mature = ?, ai = ?, noai = ?, galleries = ? WHERE id = ?").run(
+  database().prepare("UPDATE posts SET title = ?, tags = ?, mature = ?, ai = ?, noai = ?, galleries = ?, feature = ? WHERE id = ?").run(
     title.slice(0, 50),
     tags.slice(0, 2000),
     flags.mature ? 1 : 0,
     flags.ai ? 1 : 0,
     flags.noai ? 1 : 0,
     JSON.stringify(parseGalleryIds(flags.galleries ?? [])),
+    flags.feature === false ? 0 : 1,
     id,
   );
   return true;
+}
+
+function retitlePost(id: string): string {
+  const row = database().prepare("SELECT status FROM posts WHERE id = ?").get(id) as { status?: string } | undefined;
+  if (!row || row.status !== "review") return "This file is not in Working.";
+  const config = readConfig();
+  const local = config.visionProvider === "lmstudio" || config.visionProvider === "comfyui";
+  if (!config.visionEnabled || !config.visionModel.trim() || (!local && !config.visionKey.trim())) {
+    return "Turn on Suggest titles and tags in Settings, and choose a model.";
+  }
+  database().prepare("UPDATE posts SET status = 'titling', title = '', tags = '', error = '' WHERE id = ? AND status = 'review'").run(id);
+  queueTitle(id, true);
+  return "";
 }
 
 function queuePost(id: string): boolean {
@@ -459,16 +513,7 @@ function retryPost(id: string) {
 }
 
 function preservedVision(current: StudioConfig, body: Partial<StudioConfig>): Pick<StudioConfig, "visionProvider" | "visionModel" | "visionBaseUrl" | "visionKey"> {
-  const incomingModel = (body.visionModel === undefined ? current.visionModel : body.visionModel).trim();
-  if (incomingModel) {
-    return {
-      visionProvider: body.visionProvider === undefined ? current.visionProvider : body.visionProvider,
-      visionModel: incomingModel,
-      visionBaseUrl: body.visionBaseUrl === undefined ? current.visionBaseUrl : body.visionBaseUrl,
-      visionKey: body.visionKey === undefined ? current.visionKey : body.visionKey,
-    };
-  }
-  if (current.visionModel.trim()) {
+  if (body.visionModel === undefined && body.visionProvider === undefined && body.visionBaseUrl === undefined && body.visionKey === undefined) {
     return {
       visionProvider: current.visionProvider,
       visionModel: current.visionModel,
@@ -476,9 +521,18 @@ function preservedVision(current: StudioConfig, body: Partial<StudioConfig>): Pi
       visionKey: current.visionKey,
     };
   }
+  const model = (body.visionModel === undefined ? current.visionModel : body.visionModel).trim();
+  if (!model && body.visionModel === undefined) {
+    return {
+      visionProvider: current.visionProvider,
+      visionModel: current.visionModel,
+      visionBaseUrl: body.visionBaseUrl === undefined ? current.visionBaseUrl : body.visionBaseUrl,
+      visionKey: body.visionKey === undefined ? current.visionKey : body.visionKey,
+    };
+  }
   return {
     visionProvider: body.visionProvider === undefined ? current.visionProvider : body.visionProvider,
-    visionModel: "",
+    visionModel: model,
     visionBaseUrl: body.visionBaseUrl === undefined ? current.visionBaseUrl : body.visionBaseUrl,
     visionKey: body.visionKey === undefined ? current.visionKey : body.visionKey,
   };
@@ -504,12 +558,15 @@ async function saveConfig(body: Partial<StudioConfig> & { watermark?: string }) 
     publishMature: body.publishMature === undefined ? current.publishMature : body.publishMature === true,
     publishAi: body.publishAi === undefined ? current.publishAi : body.publishAi !== false,
     publishNoai: body.publishNoai === undefined ? current.publishNoai : body.publishNoai === true,
+    defaultFolder: body.defaultFolder === undefined ? current.defaultFolder : folderDefaultOf(body.defaultFolder),
     visionEnabled: body.visionEnabled === undefined ? current.visionEnabled : body.visionEnabled === true,
     watermarkCorner: body.watermarkCorner === undefined ? current.watermarkCorner : cornerOf(body.watermarkCorner),
     watermarkWidth: body.watermarkWidth === undefined ? current.watermarkWidth : markWidthOf(body.watermarkWidth),
+    visionTemperature: temperatureOf(body.visionTemperature === undefined ? current.visionTemperature : body.visionTemperature),
   };
   kvSet("config", JSON.stringify(next));
-  const visionReady = next.visionEnabled && next.visionModel.trim() && (next.visionProvider === "lmstudio" || next.visionKey.trim());
+  const localVision = next.visionProvider === "lmstudio" || next.visionProvider === "comfyui";
+  const visionReady = next.visionEnabled && next.visionModel.trim() && (localVision || next.visionKey.trim());
   if (visionReady) retitleMissing();
   const due = nextAt();
   const cap = Date.now() + next.scheduleMinutes * 60 * 1000;
@@ -748,7 +805,7 @@ async function postOne(row: PostRow) {
   for (const tag of cleanTags(tags)) body.append("tags[]", tag);
   const galleryIds = parseGalleryIds(row.galleries);
   for (const galleryId of galleryIds) body.append("galleryids[]", galleryId);
-  if (galleryIds.length > 0) body.set("feature", "false");
+  body.set("feature", Number(row.feature) === 0 ? "false" : "true");
   const published = await daFetch("/stash/publish", token, body);
   const deviationId = typeof published.deviationid === "string" ? published.deviationid : "";
   if (!deviationId) throw new Error("Publish did not return a deviation.");
@@ -794,7 +851,7 @@ async function tick() {
   if (Date.now() < holdUntil()) return;
   if (Date.now() < nextAt()) return;
   const row = database().prepare(
-    "SELECT id, name, status, title, tags, error, itemid, url, deviation_id, created_at, mature, ai, noai, galleries FROM posts WHERE status IN ('waiting', 'submitted') ORDER BY sort ASC, created_at ASC LIMIT 1",
+    "SELECT id, name, status, title, tags, error, itemid, url, deviation_id, created_at, mature, ai, noai, galleries, feature FROM posts WHERE status IN ('waiting', 'submitted') ORDER BY sort ASC, created_at ASC LIMIT 1",
   ).get() as PostRow | undefined;
   if (!row) return;
   ticking = true;
@@ -809,7 +866,7 @@ async function publishNow(id: string): Promise<string> {
   if (ticking) return "Already publishing a file.";
   if (Date.now() < holdUntil()) return kvGet("holdReason") || "The queue is waiting.";
   const row = database().prepare(
-    "SELECT id, name, status, title, tags, error, itemid, url, deviation_id, created_at, mature, ai, noai, galleries FROM posts WHERE id = ?",
+    "SELECT id, name, status, title, tags, error, itemid, url, deviation_id, created_at, mature, ai, noai, galleries, feature FROM posts WHERE id = ?",
   ).get(id) as PostRow | undefined;
   if (!row) return "missing";
   if (row.status !== "waiting" && row.status !== "submitted" && row.status !== "failed") return "That file is not waiting.";
@@ -900,12 +957,12 @@ export async function handleQueue(req: IncomingMessage, res: ServerResponse): Pr
     return true;
   }
   if (method === "PATCH" && id && url.pathname === `/da-queue/posts/${id}`) {
-    const body = JSON.parse((await readRaw(req)).toString("utf8")) as { title?: unknown; tags?: unknown; mature?: unknown; ai?: unknown; noai?: unknown; galleries?: unknown };
+    const body = JSON.parse((await readRaw(req)).toString("utf8")) as { title?: unknown; tags?: unknown; mature?: unknown; ai?: unknown; noai?: unknown; galleries?: unknown; feature?: unknown };
     const ok = patchPost(
       id,
       typeof body.title === "string" ? body.title : "",
       typeof body.tags === "string" ? body.tags : "",
-      { mature: body.mature === true, ai: body.ai !== false, noai: body.noai === true, galleries: parseGalleryIds(body.galleries) },
+      { mature: body.mature === true, ai: body.ai !== false, noai: body.noai === true, galleries: parseGalleryIds(body.galleries), feature: body.feature !== false },
     );
     sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: "missing" });
     return true;
@@ -922,6 +979,15 @@ export async function handleQueue(req: IncomingMessage, res: ServerResponse): Pr
       return true;
     }
     sendJson(res, 400, { error: "studio", error_description: message });
+    return true;
+  }
+  if (method === "POST" && id && url.pathname === `/da-queue/posts/${id}/retitle`) {
+    const message = retitlePost(id);
+    if (!message) {
+      sendJson(res, 200, snapshot());
+      return true;
+    }
+    sendJson(res, 400, { error: "retitle", error_description: message });
     return true;
   }
   if (method === "POST" && id && url.pathname === `/da-queue/posts/${id}/queue`) {

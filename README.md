@@ -68,11 +68,11 @@ The Uploads page has one drop box.
 
 A title and at least one tag are required before a file can join the queue or be sent to Sta.sh. You can type them, or let a vision model fill them in, then edit them.
 
-**Working** holds files that still need a title and tags. **Queued** holds files waiting for the schedule. **Published** lists files this app has published, newest first, with the date and time. **Sent to Stash** lists files submitted to Sta.sh.
+**Working** holds files that still need a title and tags. **Regenerate** asks the vision model again and replaces the title and tags. **Queued** holds files waiting for the schedule. **Published** lists files this app has published, newest first, with the date and time. **Sent to Stash** lists files submitted to Sta.sh.
 
 On Queued, **Cards** and **Thumbs** switch the layout. **Pause** stops later publishes and leaves the one already sending alone. **Shuffle** randomizes the files that are still waiting. **Publish now** sends one file and does not reset the schedule.
 
-**Folders** appear on a file that is going to be published. They are your DeviantArt gallery folders. Checked folders are where the publish goes. If none are checked, DeviantArt puts the deviation in Featured. Send to Stash does not show folders, because those files are not published. If the folder list says the login is missing a permission, sign out and sign in again.
+**Folders** appear on a file that is going to be published. **Featured** starts checked. In Settings, **Default folder** chooses what is checked on each new upload: Featured, none, or one of your gallery folders. You can change the checks on that file. Send to Stash does not show folders, because those files are not published. If the folder list says the login is missing a permission, sign out and sign in again.
 
 Originals on disk are not overwritten. Each sent file is re-encoded as a JPEG. Other metadata is stripped. The name or copyright line from Settings is added to the image metadata. When **No watermarks required** was unchecked, the watermark is placed in the corner and at the width chosen in Settings.
 
@@ -86,7 +86,7 @@ Settings is split into **Publishing**, **Titles and tags**, **Watermark**, and *
 
 - **Post every** — minutes between publishes. The value is kept between 5 and 1440.
 - **Your name or copyright, added to the image metadata when sent** — what to type is a credit line, such as `© Your name`. When a file is sent, that text is stored inside the JPEG as its description metadata. It is separate from the description on the DeviantArt deviation. Leave it blank and no description metadata is written.
-- **Applied to each new upload** — **Mature**, **AI generated**, and **Do not include in third-party AI datasets** are copied onto each new file. The checkboxes on that file are what get published. Changing these later does not change files already dropped.
+- **Applied to each new upload** — **Mature**, **AI generated**, and **Do not include in third-party AI datasets** are copied onto each new file. **Default folder** is the folder checked on each new file. The choices are Featured, none, or one of your gallery folders. The checkboxes on that file are what get published. Changing these later does not change files already dropped.
 
 ### Titles and tags
 
@@ -96,7 +96,15 @@ In Settings, **Suggest titles and tags** is on by default. Turn it off and the t
 
 While it is on, each drop sends one JPEG, resized to fit inside 1024×1024, and asks for a title and tags. The reply is capped at 800 tokens. You can edit both before the file is queued or sent.
 
-Set **Provider** in Settings. That shows suggested model ids for that provider. Click one to fill **Model id**, or type a different id. Choosing a provider does not fill the model by itself. Leave **Base URL** blank to use the provider default. Paste the **API key** for that provider. LM Studio has no key. The key is stored in this browser and on the dev server. It is not written into the repo.
+Set **Provider** in Settings. That shows suggested model ids for that provider. Click one to fill **Model id**, or type a different id. Choosing a provider does not fill the model by itself. Leave **Base URL** blank to use the provider default. Paste the **API key** for that provider. LM Studio and ComfyUI have no key. The key is stored in this browser and on the dev server. It is not written into the repo.
+
+ComfyUI uses the built-in Load CLIP and Generate Text nodes. ComfyUI has to be running. The list is every model in your text encoders folder. You have to select a vision model. Choose one from the list, or click a suggestion. Put the downloaded file in ComfyUI’s `models/text_encoders` folder.
+
+- Low VRAM: [`qwen3vl_4b_fp8_scaled.safetensors`](https://huggingface.co/Comfy-Org/Qwen3-VL/blob/main/text_encoders/qwen3vl_4b_fp8_scaled.safetensors) — Qwen3-VL 4B, FP8, 5.2 GB
+- Medium VRAM: [`qwen3vl_4b_bf16.safetensors`](https://huggingface.co/Comfy-Org/Qwen3-VL/blob/main/text_encoders/qwen3vl_4b_bf16.safetensors) — Qwen3-VL 4B, BF16, 8.9 GB
+- 16 GB VRAM: [`qwen3vl_8b_fp8_scaled.safetensors`](https://huggingface.co/Comfy-Org/Qwen3-VL/blob/main/text_encoders/qwen3vl_8b_fp8_scaled.safetensors) — Qwen3-VL 8B, FP8, 10.6 GB
+
+**Creativity** is the sampling temperature, from 0.01 to 2. Lower stays closer to the picture. Words that belong to one tag are joined, and spaces, hyphens, and other special characters are removed, so `sci-fi` becomes `scifi`.
 
 | Provider | Key | Model id to type | Blank base URL calls |
 | --- | --- | --- | --- |
@@ -106,10 +114,12 @@ Set **Provider** in Settings. That shows suggested model ids for that provider. 
 | Grok | [console.x.ai](https://console.x.ai/) → API keys | `grok-4.3` | `https://api.x.ai/v1` |
 | Gemini | [Google AI Studio → API keys](https://aistudio.google.com/apikey) | `gemini-2.5-flash` | `https://generativelanguage.googleapis.com/v1beta` |
 | LM Studio | None. Start LM Studio’s local server with a vision model loaded. | `qwen/qwen3-vl-4b`, or the id LM Studio shows for the loaded model. | `http://localhost:1234/v1` |
+| ComfyUI | None. ComfyUI has to be running. | The CLIP filename, such as `qwen3vl_4b_bf16.safetensors`. | `http://127.0.0.1:8188` |
 
 Prices change. For one title on a small vision model, expect a fraction of a US cent. A few hundred titles is often under a dollar. A large model that spends tokens on reasoning can be a few cents a title. Check the provider’s pricing page if you are about to run a big batch.
 
 - **LM Studio** has no API fee. It uses your machine.
+- **ComfyUI** has no API fee. It uses the CLIP model loaded by ComfyUI on your machine.
 - **Gemini 2.5 Flash** has a free tier with daily limits. Paid use is about $0.30 per million input tokens and $2.50 per million output tokens, so one 1024px title is usually well under a cent.
 - **OpenAI** mini-class vision models are a fraction of a cent. A full-size model is closer to a cent.
 - **Claude** Haiku-class models are under a cent. Larger Claude models cost more for the same picture.
