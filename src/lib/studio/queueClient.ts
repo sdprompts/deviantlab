@@ -60,6 +60,7 @@ export function syncStudioConfig(settings: AppSettings, includeVision = false) {
     defaultFolder: settings.defaultFolder,
     visionEnabled: settings.visionEnabled,
     visionTemperature: settings.visionTemperature,
+    visionTagCount: settings.visionTagCount,
     watermarkCorner: settings.watermarkCorner,
     watermarkWidth: settings.watermarkWidth,
   };
@@ -118,11 +119,15 @@ export async function enqueueStudioFile(file: File, watermark = true, studio = f
 }
 
 export async function updateQueuedPost(id: string, title: string, tags: string, flags: { mature: boolean; ai: boolean; noai: boolean; galleries: string[]; feature: boolean }): Promise<void> {
-  await fetch(`/da-queue/posts/${id}`, {
+  const response = await fetch(`/da-queue/posts/${id}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ title, tags, ...flags }),
   });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error_description?: string } | null;
+    throw new Error(payload?.error_description || "Could not save that file.");
+  }
 }
 
 export async function removeQueuedPost(id: string): Promise<void> {

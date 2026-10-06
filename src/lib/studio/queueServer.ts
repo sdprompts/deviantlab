@@ -62,6 +62,7 @@ type StudioConfig = {
   watermarkCorner: string;
   watermarkWidth: number;
   visionTemperature: number;
+  visionTagCount: number;
 };
 
 const configDefaults: StudioConfig = {
@@ -79,11 +80,12 @@ const configDefaults: StudioConfig = {
   watermarkCorner: "bottom-right",
   watermarkWidth: 400,
   visionTemperature: 0.7,
+  visionTagCount: 25,
 };
 
 let db: DatabaseSync | null = null;
-let ticking = false;
 let env: Record<string, string> = {};
+const serverGlobals = globalThis as { __deviantlabQueue?: NodeJS.Timeout; __deviantlabTicking?: boolean };
 
 function database(): DatabaseSync {
   if (db) return db;
@@ -187,6 +189,7 @@ function readConfig(): StudioConfig {
       watermarkCorner: cornerOf(parsed.watermarkCorner),
       watermarkWidth: markWidthOf(parsed.watermarkWidth),
       visionTemperature: temperatureOf(parsed.visionTemperature),
+      visionTagCount: tagCountOf(parsed.visionTagCount),
     };
   } catch {
     return { ...configDefaults };
@@ -219,11 +222,10 @@ function holdUntil(): number {
 
 export function startQueue(serverEnv: Record<string, string>) {
   env = serverEnv;
-  const slot = globalThis as { __deviantlabQueue?: NodeJS.Timeout };
-  if (slot.__deviantlabQueue) clearInterval(slot.__deviantlabQueue);
+  if (serverGlobals.__deviantlabQueue) clearInterval(serverGlobals.__deviantlabQueue);
   void mkdir(FILES, { recursive: true }).then(() => mkdir(THUMBS, { recursive: true })).then(() => {
     database();
-    slot.__deviantlabQueue = setInterval(() => void tick(), 5000);
+    serverGlobals.__deviantlabQueue = setInterval(() => void tick(), 5000);
   }).catch(() => undefined);
 }
 
@@ -318,6 +320,12 @@ function temperatureOf(value: unknown): number {
   return Math.min(2, Math.max(0.01, Math.round(next * 100) / 100));
 }
 
+function tagCountOf(value: unknown): number {
+  const count = Math.round(Number(value));
+  if (!Number.isFinite(count)) return 25;
+  return Math.min(30, Math.max(1, count));
+}
+
 async function saveThumb(id: string, bytes: Buffer) {
   try {
     const thumb = await sharp(bytes).rotate().resize({ width: 240, height: 240, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 70 }).toBuffer();
@@ -383,6 +391,7 @@ async function titleFile(id: string) {
       imageBase64: small.toString("base64"),
       mediaType: "image/jpeg",
       temperature: config.visionTemperature,
+      tagCount: config.visionTagCount,
     });
     const current = database().prepare("SELECT status, title, tags, studio FROM posts WHERE id = ?").get(id) as { status?: string; title?: string; tags?: string; studio?: number } | undefined;
     if (!current || current.status !== "titling") return;
@@ -563,6 +572,7 @@ async function saveConfig(body: Partial<StudioConfig> & { watermark?: string }) 
     watermarkCorner: body.watermarkCorner === undefined ? current.watermarkCorner : cornerOf(body.watermarkCorner),
     watermarkWidth: body.watermarkWidth === undefined ? current.watermarkWidth : markWidthOf(body.watermarkWidth),
     visionTemperature: temperatureOf(body.visionTemperature === undefined ? current.visionTemperature : body.visionTemperature),
+    visionTagCount: tagCountOf(body.visionTagCount === undefined ? current.visionTagCount : body.visionTagCount),
   };
   kvSet("config", JSON.stringify(next));
   const localVision = next.visionProvider === "lmstudio" || next.visionProvider === "comfyui";
@@ -846,7 +856,7 @@ async function attempt(row: PostRow, schedule: boolean): Promise<string> {
 }
 
 async function tick() {
-  if (ticking) return;
+  if (serverGlobals.__deviantlabTicking) return;
   if (kvGet("paused") === "1") return;
   if (Date.now() < holdUntil()) return;
   if (Date.now() < nextAt()) return;
@@ -854,16 +864,16 @@ async function tick() {
     "SELECT id, name, status, title, tags, error, itemid, url, deviation_id, created_at, mature, ai, noai, galleries, feature FROM posts WHERE status IN ('waiting', 'submitted') ORDER BY sort ASC, created_at ASC LIMIT 1",
   ).get() as PostRow | undefined;
   if (!row) return;
-  ticking = true;
+  serverGlobals.__deviantlabTicking = true;
   try {
     await attempt(row, true);
   } finally {
-    ticking = false;
+    serverGlobals.__deviantlabTicking = false;
   }
 }
 
 async function publishNow(id: string): Promise<string> {
-  if (ticking) return "Already publishing a file.";
+  if (serverGlobals.__deviantlabTicking) return "Already publishing a file.";
   if (Date.now() < holdUntil()) return kvGet("holdReason") || "The queue is waiting.";
   const row = database().prepare(
     "SELECT id, name, status, title, tags, error, itemid, url, deviation_id, created_at, mature, ai, noai, galleries, feature FROM posts WHERE id = ?",
@@ -871,11 +881,11 @@ async function publishNow(id: string): Promise<string> {
   if (!row) return "missing";
   if (row.status !== "waiting" && row.status !== "submitted" && row.status !== "failed") return "That file is not waiting.";
   if (!row.title?.trim() || cleanTags(row.tags || "").length === 0) return "Add a title and tags first.";
-  ticking = true;
+  serverGlobals.__deviantlabTicking = true;
   try {
     return await attempt(row, false);
   } finally {
-    ticking = false;
+    serverGlobals.__deviantlabTicking = false;
   }
 }
 

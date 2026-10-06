@@ -508,15 +508,22 @@ function QueueRow({
     return { mature, ai, noai, galleries, feature, ...patch };
   }
 
-  async function save(next = flags()) {
-    if (locked) return;
-    await updateQueuedPost(post.id, title, tags, next);
+  async function save(next = flags()): Promise<boolean> {
+    if (locked) return false;
+    try {
+      await updateQueuedPost(post.id, title, tags, next);
+      setRowError("");
+      return true;
+    } catch (err) {
+      setRowError(err instanceof Error ? err.message : "Could not save that file.");
+      return false;
+    }
   }
 
   async function approve() {
     setRowError("");
     try {
-      await save();
+      if (!(await save())) return;
       if (post.studio) await submitToStudio(post.id);
       else await approveQueuedPost(post.id);
       onChanged();
@@ -540,7 +547,7 @@ function QueueRow({
     setRowError("");
     setPublishing(true);
     try {
-      await save();
+      if (!(await save())) return;
       await publishQueuedNow(post.id);
       onChanged();
     } catch (err) {

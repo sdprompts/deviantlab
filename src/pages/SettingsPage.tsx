@@ -14,6 +14,7 @@ import {
   type VisionProvider,
   type WatermarkCorner,
   markWidthOf,
+  tagCountOf,
   temperatureOf,
   visionForProvider,
 } from "../lib/settings";
@@ -36,6 +37,7 @@ export function SettingsPage() {
   const [clips, setClips] = useState<string[]>([]);
   const [clipNote, setClipNote] = useState("");
   const [creativity, setCreativity] = useState(() => readSettings().visionTemperature);
+  const [tagCount, setTagCount] = useState(() => String(readSettings().visionTagCount));
   const [folders, setFolders] = useState<GalleryFolder[]>([]);
 
   useEffect(() => {
@@ -170,6 +172,25 @@ export function SettingsPage() {
           </Section>
           <Section title="Titles and tags">
             <DefaultToggle label="Suggest titles and tags" on={settings.visionEnabled} onClick={() => save("visionEnabled", !settings.visionEnabled)} />
+            <label className="block text-[12px] text-zinc-400">
+              Tags to write
+              <span className="mt-1 flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={tagCount}
+                  onChange={(event) => setTagCount(event.target.value)}
+                  onBlur={() => {
+                    const next = tagCountOf(tagCount);
+                    setTagCount(String(next));
+                    save("visionTagCount", next);
+                  }}
+                  className={`${field} max-w-24`}
+                />
+              </span>
+              <span className="mt-1 block text-zinc-500">From 1 to 30. 25 is the default. Each new title uses this many tags.</span>
+            </label>
           {settings.visionEnabled ? (
             <>
               <div className="grid grid-cols-2 gap-3 border-t border-lab-line pt-3">

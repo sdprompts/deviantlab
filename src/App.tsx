@@ -15,11 +15,6 @@ export function App() {
             <Route index element={<StudioPage />} />
             <Route path="studio" element={<Navigate to="/" replace />} />
             <Route path="settings" element={<SettingsPage />} />
-            <Route path="browse" element={<Navigate to="/" replace />} />
-            <Route path="following" element={<Navigate to="/" replace />} />
-            <Route path="tags" element={<Navigate to="/" replace />} />
-            <Route path="deviation/:id" element={<Navigate to="/" replace />} />
-            <Route path="u/:username" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
       </BrowserRouter>

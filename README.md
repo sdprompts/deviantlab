@@ -56,6 +56,8 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173) and click **Sign in**. DeviantArt sends you back to the callback address above. After that, the sidebar shows your username.
 
+On Windows, close the dev server and double-click `update.bat` to pull the latest commit and install dependencies. Start `npm run dev` again after it finishes.
+
 `npm run build` typechecks and builds the static app. The DeviantArt proxy and the publish queue exist only while `npm run dev` is running. Use the dev server to sign in, queue, and publish.
 
 ## What it does
@@ -96,7 +98,7 @@ In Settings, **Suggest titles and tags** is on by default. Turn it off and the t
 
 While it is on, each drop sends one JPEG, resized to fit inside 1024×1024, and asks for a title and tags. The reply is capped at 800 tokens. You can edit both before the file is queued or sent. **Regenerate** on Working asks again and replaces the title and tags.
 
-The title is a gallery title: a name for the mood or the moment, not a list of what is in the picture. It is at most 50 characters. Tags are 20 to 30. Words that belong to one tag are joined, and spaces, hyphens, and other special characters are removed, so `sci-fi` becomes `scifi`.
+The title is a gallery title: a name for the mood or the moment, not a list of what is in the picture. It is at most 50 characters. **Tags to write** is how many tags to create, from 1 to 30. 25 is the default. Words that belong to one tag are joined, and spaces, hyphens, and other special characters are removed, so `sci-fi` becomes `scifi`.
 
 Set **Provider** in Settings. Switching providers fills **Model id** with the last model you used for that provider. A provider you have not used yet stays blank. Suggested model ids are listed under the provider. Click one to fill **Model id**, or type a different id. Leave **Base URL** blank to use the provider default. Paste the **API key** for that provider. LM Studio and ComfyUI have no key. The key is stored in this browser and on the dev server. It is not written into the repo.
 

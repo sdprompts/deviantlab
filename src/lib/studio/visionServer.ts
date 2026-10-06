@@ -6,23 +6,34 @@ export type VisionRequest = {
   imageBase64?: string;
   mediaType?: string;
   temperature?: number;
+  tagCount?: number;
 };
 
 const TITLE_RULE = "The title is a gallery artwork title: evocative, specific, and a little unexpected, a name for the mood, the stakes, or the moment. Metaphor is welcome when it fits the picture. Do not list the objects, and do not write a caption. 3 to 8 words, at most 50 characters, with no quotation marks.";
 
-const PROMPT = `Look at the image. Reply with JSON only, no markdown: {"title":"...","tags":["..."]}. ${TITLE_RULE} Provide 20 to 30 tags. Join the words of a tag into one word. Remove spaces, hyphens, underscores, and other special characters, like scifi or postapocalyptic. No # and no sentences. Cover subject, mood, style, colours, and setting.`;
+function tagCountOf(value: unknown): number {
+  const count = Math.round(Number(value));
+  if (!Number.isFinite(count)) return 25;
+  return Math.min(30, Math.max(1, count));
+}
 
-const COMFY_PROMPT = `Look at the image. Reply in exactly this format and nothing else:
+function titlePrompt(count: number): string {
+  return `Look at the image. Reply with JSON only, no markdown: {"title":"...","tags":["..."]}. ${TITLE_RULE} Provide ${count} tags. Join the words of a tag into one word. Remove spaces, hyphens, underscores, and other special characters, like scifi or postapocalyptic. No # and no sentences. Cover subject, mood, style, colours, and setting.`;
+}
+
+function comfyPrompt(count: number): string {
+  return `Look at the image. Reply in exactly this format and nothing else:
 
 Title: <${TITLE_RULE}>
-Tags: <comma-separated tags, most specific first, 20 to 30 tags. Join the words of a tag. No spaces, no hyphens, and no special characters>`;
+Tags: <comma-separated tags, most specific first, ${count} tags. Join the words of a tag. No spaces, no hyphens, and no special characters>`;
+}
 
 function oneTag(raw: string): string {
   const tag = raw.trim().replace(/^#+/, "").replace(/[^\p{L}\p{N}]+/gu, "");
   return tag.length > 0 && tag.length <= 40 ? tag : "";
 }
 
-function cleanTags(value: unknown): string[] {
+function cleanTags(value: unknown, limit: number): string[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
   for (const item of value) {
@@ -30,16 +41,16 @@ function cleanTags(value: unknown): string[] {
     const tag = oneTag(item);
     if (tag) seen.add(tag);
   }
-  return [...seen].slice(0, 30);
+  return [...seen].slice(0, limit);
 }
 
-function readJson(text: string): { title: string; tags: string[] } {
+function readJson(text: string, limit: number): { title: string; tags: string[] } {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end <= start) throw new Error("The model did not return a title.");
   const parsed = JSON.parse(text.slice(start, end + 1)) as { title?: unknown; tags?: unknown };
   const title = typeof parsed.title === "string" ? parsed.title.trim().slice(0, 50) : "";
-  return { title, tags: cleanTags(parsed.tags) };
+  return { title, tags: cleanTags(parsed.tags, limit) };
 }
 
 function endpoint(provider: string, baseUrl: string, model: string): string {
@@ -65,16 +76,16 @@ function temperatureOf(value: unknown): number {
   return Math.min(2, Math.max(0.01, Math.round(next * 100) / 100));
 }
 
-function readAnswer(text: string): { title: string; tags: string[] } {
+function readAnswer(text: string, limit: number): { title: string; tags: string[] } {
   try {
-    const json = readJson(text);
+    const json = readJson(text, limit);
     if (json.title || json.tags.length > 0) return json;
   } catch {
     // The ComfyUI reply is Title / Tags text.
   }
   const title = (text.match(/^Title:\s*(.+)$/im)?.[1] || "").replace(/^["']|["']$/g, "").trim().slice(0, 50);
   const tagsBlock = text.match(/^Tags:\s*([\s\S]+)$/im)?.[1] || "";
-  const tags = cleanTags(tagsBlock.split(/[,\n]/));
+  const tags = cleanTags(tagsBlock.split(/[,\n]/), limit);
   if (!title && tags.length === 0) throw new Error("The model did not return a title.");
   return { title, tags };
 }
@@ -119,7 +130,7 @@ function historyError(messages: unknown): string {
   return "ComfyUI could not generate a title.";
 }
 
-async function comfyVision(baseUrl: string, model: string, temperature: unknown, image: string, mediaType: string): Promise<{ title: string; tags: string[] }> {
+async function comfyVision(baseUrl: string, model: string, temperature: unknown, image: string, mediaType: string, tagCount: number): Promise<{ title: string; tags: string[] }> {
   const root = comfyRoot(baseUrl);
   const ext = mediaType === "image/png" ? "png" : "jpg";
   const form = new FormData();
@@ -151,7 +162,7 @@ async function comfyVision(baseUrl: string, model: string, temperature: unknown,
       class_type: "TextGenerate",
       inputs: {
         clip: ["1", 0],
-        prompt: COMFY_PROMPT,
+        prompt: comfyPrompt(tagCount),
         image: ["2", 0],
         max_length: 512,
         sampling_mode: "on",
@@ -184,7 +195,7 @@ async function comfyVision(baseUrl: string, model: string, temperature: unknown,
   }
   const ticket = (await queued.json()) as { prompt_id?: string; error?: { message?: string }; node_errors?: Record<string, { errors?: { details?: string; message?: string }[] }> };
   if (!queued.ok || !ticket.prompt_id) throw new Error(comfyFailure(ticket));
-  return readAnswer(await comfyText(root, ticket.prompt_id));
+  return readAnswer(await comfyText(root, ticket.prompt_id), tagCount);
 }
 
 export async function listComfyClips(baseUrl: string): Promise<string[]> {
@@ -218,8 +229,10 @@ export async function runVision(input: VisionRequest): Promise<{ title: string; 
   const mediaType = input.mediaType || "image/jpeg";
   if (!model) throw new Error(provider === "comfyui" ? "Choose a CLIP file in Settings." : "Set a vision model in Settings.");
   if (!image) throw new Error("This file has no image to title.");
+  const count = tagCountOf(input.tagCount);
+  const prompt = titlePrompt(count);
   if (provider === "comfyui") {
-    return comfyVision(input.baseUrl || "", model, input.temperature, image, mediaType);
+    return comfyVision(input.baseUrl || "", model, input.temperature, image, mediaType, count);
   }
   if (provider !== "lmstudio" && !(input.apiKey || "").trim()) throw new Error("Set the vision API key in Settings.");
 
@@ -242,7 +255,7 @@ export async function runVision(input: VisionRequest): Promise<{ title: string; 
             role: "user",
             content: [
               { type: "image", source: { type: "base64", media_type: mediaType, data: image } },
-              { type: "text", text: PROMPT },
+              { type: "text", text: prompt },
             ],
           },
         ],
@@ -260,7 +273,7 @@ export async function runVision(input: VisionRequest): Promise<{ title: string; 
           {
             parts: [
               { inlineData: { mimeType: mediaType, data: image } },
-              { text: PROMPT },
+              { text: prompt },
             ],
           },
         ],
@@ -281,7 +294,7 @@ export async function runVision(input: VisionRequest): Promise<{ title: string; 
           {
             role: "user",
             content: [
-              { type: "text", text: PROMPT },
+              { type: "text", text: prompt },
               { type: "image_url", image_url: { url: `data:${mediaType};base64,${image}` } },
             ],
           },
@@ -302,7 +315,7 @@ export async function runVision(input: VisionRequest): Promise<{ title: string; 
     : provider === "gemini"
       ? (payload.candidates?.[0]?.content?.parts ?? []).map((part) => part.text || "").join("\n")
       : payload.choices?.[0]?.message?.content || "";
-  const result = readJson(text);
+  const result = readJson(text, count);
   if (!result.title && result.tags.length === 0) throw new Error("The model did not return a title.");
   return result;
 }

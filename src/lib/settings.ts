@@ -13,6 +13,7 @@ export type AppSettings = {
   visionBaseUrl: string;
   visionKey: string;
   visionTemperature: number;
+  visionTagCount: number;
   publishMature: boolean;
   publishAi: boolean;
   publishNoai: boolean;
@@ -35,6 +36,7 @@ const defaults: AppSettings = {
   visionBaseUrl: "",
   visionKey: "",
   visionTemperature: 0.7,
+  visionTagCount: 25,
   publishMature: false,
   publishAi: true,
   publishNoai: false,
@@ -68,6 +70,7 @@ export function readSettings(): AppSettings {
       watermarkCorner: isCorner(parsed.watermarkCorner) ? parsed.watermarkCorner : "bottom-right",
       watermarkWidth: markWidthOf(parsed.watermarkWidth),
       visionTemperature: temperatureOf(parsed.visionTemperature),
+      visionTagCount: tagCountOf(parsed.visionTagCount),
     };
   } catch {
     return { ...defaults };
@@ -136,6 +139,12 @@ export function temperatureOf(value: unknown): number {
   const next = Number(value);
   if (!Number.isFinite(next)) return 0.7;
   return Math.min(2, Math.max(0.01, Math.round(next * 100) / 100));
+}
+
+export function tagCountOf(value: unknown): number {
+  const count = Math.round(Number(value));
+  if (!Number.isFinite(count)) return 25;
+  return Math.min(30, Math.max(1, count));
 }
 
 export function markWidthOf(value: unknown): number {

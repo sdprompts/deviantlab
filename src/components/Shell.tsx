@@ -7,7 +7,15 @@ export function Shell() {
       <Sidebar />
       <main className="flex min-w-0 flex-1 flex-col">
         <Outlet />
-        <footer className="flex shrink-0 justify-end border-t border-lab-line px-4 py-2">
+        <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-lab-line px-4 py-2">
+          <a
+            href="https://github.com/sdprompts/deviantlab"
+            target="_blank"
+            rel="noreferrer"
+            className="text-[13px] text-zinc-400 hover:text-zinc-200"
+          >
+            DeviantLab GitHub Repo
+          </a>
           <a
             href="https://ko-fi.com/H2H514IXI3"
             target="_blank"
