@@ -94,17 +94,19 @@ A title and at least one tag are required. You can type them, or let a vision mo
 
 In Settings, **Suggest titles and tags** is on by default. Turn it off and the title and tags stay empty. The model, base URL, and API key you already saved stay in place for when you turn it back on.
 
-While it is on, each drop sends one JPEG, resized to fit inside 1024×1024, and asks for a title and tags. The reply is capped at 800 tokens. You can edit both before the file is queued or sent.
+While it is on, each drop sends one JPEG, resized to fit inside 1024×1024, and asks for a title and tags. The reply is capped at 800 tokens. You can edit both before the file is queued or sent. **Regenerate** on Working asks again and replaces the title and tags.
 
-Set **Provider** in Settings. That shows suggested model ids for that provider. Click one to fill **Model id**, or type a different id. Choosing a provider does not fill the model by itself. Leave **Base URL** blank to use the provider default. Paste the **API key** for that provider. LM Studio and ComfyUI have no key. The key is stored in this browser and on the dev server. It is not written into the repo.
+The title is a gallery title: a name for the mood or the moment, not a list of what is in the picture. It is at most 50 characters. Tags are 20 to 30. Words that belong to one tag are joined, and spaces, hyphens, and other special characters are removed, so `sci-fi` becomes `scifi`.
 
-ComfyUI uses the built-in Load CLIP and Generate Text nodes. ComfyUI has to be running. The list is every model in your text encoders folder. You have to select a vision model. Choose one from the list, or click a suggestion. Put the downloaded file in ComfyUI’s `models/text_encoders` folder.
+Set **Provider** in Settings. Switching providers fills **Model id** with the last model you used for that provider. A provider you have not used yet stays blank. Suggested model ids are listed under the provider. Click one to fill **Model id**, or type a different id. Leave **Base URL** blank to use the provider default. Paste the **API key** for that provider. LM Studio and ComfyUI have no key. The key is stored in this browser and on the dev server. It is not written into the repo.
+
+ComfyUI uses the built-in Load CLIP and Generate Text nodes. ComfyUI has to be running. The list is every model in your text encoders folder. You have to select a vision model. Text encoders used only to draw a picture will not write a title. Choose one from the list, or click a suggestion. Put the downloaded file in ComfyUI’s `models/text_encoders` folder.
 
 - Low VRAM: [`qwen3vl_4b_fp8_scaled.safetensors`](https://huggingface.co/Comfy-Org/Qwen3-VL/blob/main/text_encoders/qwen3vl_4b_fp8_scaled.safetensors) — Qwen3-VL 4B, FP8, 5.2 GB
 - Medium VRAM: [`qwen3vl_4b_bf16.safetensors`](https://huggingface.co/Comfy-Org/Qwen3-VL/blob/main/text_encoders/qwen3vl_4b_bf16.safetensors) — Qwen3-VL 4B, BF16, 8.9 GB
 - 16 GB VRAM: [`qwen3vl_8b_fp8_scaled.safetensors`](https://huggingface.co/Comfy-Org/Qwen3-VL/blob/main/text_encoders/qwen3vl_8b_fp8_scaled.safetensors) — Qwen3-VL 8B, FP8, 10.6 GB
 
-**Creativity** is the sampling temperature, from 0.01 to 2. Lower stays closer to the picture. Words that belong to one tag are joined, and spaces, hyphens, and other special characters are removed, so `sci-fi` becomes `scifi`.
+**Creativity** is ComfyUI’s sampling temperature, from 0.01 to 2. Lower stays closer to the picture. Higher varies the title and tags. Each generation uses a new seed.
 
 | Provider | Key | Model id to type | Blank base URL calls |
 | --- | --- | --- | --- |
