@@ -54,9 +54,11 @@ Start the app:
 npm run dev
 ```
 
+On Windows, double-click `start.bat`. It serves the app at [http://localhost:5173](http://localhost:5173). Close that window to stop it.
+
 Open [http://localhost:5173](http://localhost:5173) and click **Sign in**. DeviantArt sends you back to the callback address above. After that, the sidebar shows your username.
 
-On Windows, close the dev server and double-click `update.bat` to pull the latest commit and install dependencies. Start `npm run dev` again after it finishes.
+On Windows, close the server window and double-click `update.bat` to pull the latest commit and install dependencies. Double-click `start.bat` again after it finishes.
 
 `npm run build` typechecks and builds the static app. The DeviantArt proxy and the publish queue exist only while `npm run dev` is running. Use the dev server to sign in, queue, and publish.
 

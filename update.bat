@@ -12,7 +12,7 @@ if errorlevel 1 goto fail
 call npm install
 if errorlevel 1 goto fail
 echo.
-echo DeviantLab is up to date. Close this window, then start it with: npm run dev
+echo DeviantLab is up to date. Close this window, then double-click start.bat.
 echo.
 pause
 exit /b 0
