@@ -10,7 +10,7 @@ const items = [
 export function Sidebar() {
   const { session, signIn, signOut } = useLab();
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r border-lab-line bg-lab">
+    <aside className="flex min-h-0 w-56 shrink-0 flex-col overflow-hidden border-r border-lab-line bg-lab">
       <div className="flex h-14 items-center gap-2.5 border-b border-lab-line px-4">
         <span className="text-da">
           <Mark />

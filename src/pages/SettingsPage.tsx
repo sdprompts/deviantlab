@@ -14,6 +14,9 @@ import {
   type VisionProvider,
   type WatermarkCorner,
   markWidthOf,
+  promptOf,
+  defaultTagsOf,
+  defaultVisionPrompt,
   tagCountOf,
   temperatureOf,
   visionForProvider,
@@ -38,6 +41,8 @@ export function SettingsPage() {
   const [clipNote, setClipNote] = useState("");
   const [creativity, setCreativity] = useState(() => readSettings().visionTemperature);
   const [tagCount, setTagCount] = useState(() => String(readSettings().visionTagCount));
+  const [tagDefaults, setTagDefaults] = useState(() => readSettings().defaultTags);
+  const [promptText, setPromptText] = useState(() => readSettings().visionPrompt || defaultVisionPrompt);
   const [folders, setFolders] = useState<GalleryFolder[]>([]);
 
   useEffect(() => {
@@ -116,10 +121,11 @@ export function SettingsPage() {
   }, [previewFile, watermark, settings.watermarkCorner, settings.watermarkWidth]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex h-full min-h-0 flex-1 flex-col">
       <PageHeader kicker="Settings" title="Settings" />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <div className="max-w-lg space-y-8">
+        <div className="grid items-start gap-6 xl:grid-cols-2">
+          <div className="space-y-6">
           <Section title="Publishing">
           <label className="block text-[12px] text-zinc-400">
             Post every
@@ -169,164 +175,6 @@ export function SettingsPage() {
               <span className="mt-1 block text-zinc-500">{session ? "Checked on each new upload. You can change it on that file." : "Sign in to choose one of your gallery folders."}</span>
             </label>
           </div>
-          </Section>
-          <Section title="Titles and tags">
-            <DefaultToggle label="Suggest titles and tags" on={settings.visionEnabled} onClick={() => save("visionEnabled", !settings.visionEnabled)} />
-            <label className="block text-[12px] text-zinc-400">
-              Tags to write
-              <span className="mt-1 flex items-center gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  max={30}
-                  value={tagCount}
-                  onChange={(event) => setTagCount(event.target.value)}
-                  onBlur={() => {
-                    const next = tagCountOf(tagCount);
-                    setTagCount(String(next));
-                    save("visionTagCount", next);
-                  }}
-                  className={`${field} max-w-24`}
-                />
-              </span>
-              <span className="mt-1 block text-zinc-500">From 1 to 30. 25 is the default. Each new title uses this many tags.</span>
-            </label>
-          {settings.visionEnabled ? (
-            <>
-              <div className="grid grid-cols-2 gap-3 border-t border-lab-line pt-3">
-                <label className="text-[12px] text-zinc-400">
-                  Provider
-                  <select
-                    value={settings.visionProvider}
-                    onChange={(event) => chooseProvider(event.target.value as VisionProvider)}
-                    className={`mt-1 ${field}`}
-                  >
-                    <option value="openrouter">OpenRouter</option>
-                    <option value="lmstudio">LM Studio</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="claude">Claude</option>
-                    <option value="grok">Grok</option>
-                    <option value="gemini">Gemini</option>
-                    <option value="comfyui">ComfyUI</option>
-                  </select>
-                </label>
-                {settings.visionProvider === "comfyui" ? (
-                  <label className="text-[12px] text-zinc-400">
-                    CLIP model
-                    {clips.length ? (
-                      <select
-                        value={settings.visionModel}
-                        onChange={(event) => saveModel(event.target.value)}
-                        className={`mt-1 ${field}`}
-                      >
-                        <option value="">Choose a vision model</option>
-                        {(settings.visionModel && !clips.includes(settings.visionModel) ? [settings.visionModel, ...clips] : clips).map((name) => (
-                          <option key={name} value={name}>{name}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        value={settings.visionModel}
-                        onChange={(event) => saveModel(event.target.value)}
-                        placeholder="qwen3vl_4b_bf16.safetensors"
-                        className={`mt-1 ${field}`}
-                      />
-                    )}
-                  </label>
-                ) : (
-                  <label className="text-[12px] text-zinc-400">
-                    Model id
-                    <input
-                      value={settings.visionModel}
-                      onChange={(event) => saveModel(event.target.value)}
-                      placeholder={visionGuide(settings.visionProvider).models[0]?.id}
-                      className={`mt-1 ${field}`}
-                    />
-                  </label>
-                )}
-              </div>
-              {settings.visionProvider === "comfyui" ? (
-                <div className="space-y-1.5">
-                  {clipNote ? <p className="text-[12px] text-zinc-500">{clipNote}</p> : null}
-                  <p className="text-[12px] text-zinc-500">The list is every model in your text encoders folder. You have to select a vision model. A click below fills the CLIP model. Put the download in ComfyUI’s models/text_encoders folder.</p>
-                  {visionGuide("comfyui").models.map((item) => (
-                    <div key={item.id} className={`rounded-md border ${settings.visionModel === item.id ? "border-da" : "border-lab-line"}`}>
-                      <button
-                        type="button"
-                        onClick={() => saveModel(item.id)}
-                        className="block w-full px-2.5 py-1.5 text-left"
-                      >
-                        <span className="block text-[12px] font-medium text-zinc-100">{item.id}</span>
-                        <span className="block text-[12px] text-zinc-500">{item.why}</span>
-                      </button>
-                      {item.href ? (
-                        <a href={item.href} target="_blank" rel="noreferrer" className="block px-2.5 pb-1.5 text-[12px] text-da">Download</a>
-                      ) : null}
-                    </div>
-                  ))}
-                  <label className="block text-[12px] text-zinc-400">
-                    <span className="flex items-center justify-between">
-                      Creativity
-                      <span className="text-zinc-200">{creativity.toFixed(2)}</span>
-                    </span>
-                    <input
-                      type="range"
-                      min={0.01}
-                      max={2}
-                      step={0.01}
-                      value={creativity}
-                      onChange={(event) => setCreativity(temperatureOf(Number(event.target.value)))}
-                      onPointerUp={(event) => save("visionTemperature", temperatureOf(Number(event.currentTarget.value)))}
-                      onKeyUp={(event) => save("visionTemperature", temperatureOf(Number(event.currentTarget.value)))}
-                      onBlur={(event) => save("visionTemperature", temperatureOf(Number(event.currentTarget.value)))}
-                      className="mt-2 w-full accent-da"
-                    />
-                  </label>
-                  <p className="text-[12px] text-zinc-500">Lower stays closer to the picture. Higher varies the title and tags. ComfyUI has to be running. Each tag is joined into one word, and spaces, hyphens, and other special characters are removed.</p>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  <p className="text-[12px] text-zinc-500">Suggestions for this provider. A click fills the model id. The provider does not fill it for you.</p>
-                  {visionGuide(settings.visionProvider).models.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => saveModel(item.id)}
-                      className={`block w-full rounded-md border px-2.5 py-1.5 text-left ${settings.visionModel === item.id ? "border-da" : "border-lab-line hover:border-zinc-500"}`}
-                    >
-                      <span className="block text-[12px] font-medium text-zinc-100">{item.id}</span>
-                      <span className="block text-[12px] text-zinc-500">{item.why}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <label className="block text-[12px] text-zinc-400">
-                Base URL
-                <input
-                  value={settings.visionBaseUrl}
-                  onChange={(event) => save("visionBaseUrl", event.target.value)}
-                  onBlur={(event) => {
-                    if (settings.visionProvider === "comfyui") void loadClips(event.currentTarget.value);
-                  }}
-                  placeholder={settings.visionProvider === "claude" ? "Ignored for Claude" : settings.visionProvider === "comfyui" ? "Blank uses http://127.0.0.1:8188" : "Blank uses the provider default"}
-                  className={`mt-1 ${field}`}
-                />
-              </label>
-              {settings.visionProvider === "comfyui" ? null : (
-              <label className="block text-[12px] text-zinc-400">
-                {visionGuide(settings.visionProvider).keyLabel}
-                <input
-                  type="password"
-                  value={settings.visionKey}
-                  onChange={(event) => save("visionKey", event.target.value)}
-                  disabled={settings.visionProvider === "lmstudio"}
-                  placeholder={settings.visionProvider === "lmstudio" ? "Leave empty" : ""}
-                  className={`mt-1 ${field} disabled:opacity-50`}
-                />
-              </label>
-              )}
-            </>
-          ) : null}
           </Section>
           <Section title="Watermark">
             <div className="flex items-start justify-between gap-3">
@@ -449,6 +297,197 @@ export function SettingsPage() {
               </button>
             </div>
           </Section>
+          </div>
+          <div className="space-y-6">
+          <Section title="Titles and tags">
+            <DefaultToggle label="Suggest titles and tags" on={settings.visionEnabled} onClick={() => save("visionEnabled", !settings.visionEnabled)} />
+            <label className="block text-[12px] text-zinc-400">
+              Tags to write
+              <span className="mt-1 flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={tagCount}
+                  onChange={(event) => setTagCount(event.target.value)}
+                  onBlur={() => {
+                    const next = tagCountOf(tagCount);
+                    setTagCount(String(next));
+                    save("visionTagCount", next);
+                  }}
+                  className={`${field} max-w-24`}
+                />
+              </span>
+              <span className="mt-1 block text-zinc-500">From 1 to 30. 25 is the default. Each new title uses this many tags.</span>
+            </label>
+            <label className="block text-[12px] text-zinc-400">
+              Default tags
+              <input
+                value={tagDefaults}
+                onChange={(event) => setTagDefaults(event.target.value)}
+                onBlur={() => {
+                  const next = defaultTagsOf(tagDefaults);
+                  setTagDefaults(next);
+                  save("defaultTags", next);
+                }}
+                placeholder="portrait, fantasy"
+                className={`mt-1 ${field}`}
+              />
+              <span className="mt-1 block text-zinc-500">Added to every new upload. Separate them with commas. You can edit them on that file.</span>
+            </label>
+            <label className="block text-[12px] text-zinc-400">
+              Title and tag instructions
+              <textarea
+                value={promptText}
+                rows={8}
+                onChange={(event) => setPromptText(event.target.value)}
+                onBlur={() => {
+                  const next = promptOf(promptText);
+                  setPromptText(next);
+                  save("visionPrompt", next);
+                }}
+                className="mt-1 min-h-80 w-full rounded-md border border-lab-line bg-lab px-3 py-2 text-[13px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-zinc-500"
+              />
+              <span className="mt-1 block text-zinc-500">Sent with every title. The reply format stays fixed.</span>
+            </label>
+          {settings.visionEnabled ? (
+            <>
+              <div className="grid grid-cols-2 gap-3 border-t border-lab-line pt-3">
+                <label className="text-[12px] text-zinc-400">
+                  Provider
+                  <select
+                    value={settings.visionProvider}
+                    onChange={(event) => chooseProvider(event.target.value as VisionProvider)}
+                    className={`mt-1 ${field}`}
+                  >
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="lmstudio">LM Studio</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="claude">Claude</option>
+                    <option value="grok">Grok</option>
+                    <option value="gemini">Gemini</option>
+                    <option value="comfyui">ComfyUI</option>
+                  </select>
+                </label>
+                {settings.visionProvider === "comfyui" ? (
+                  <label className="text-[12px] text-zinc-400">
+                    CLIP model
+                    {clips.length ? (
+                      <select
+                        value={settings.visionModel}
+                        onChange={(event) => saveModel(event.target.value)}
+                        className={`mt-1 ${field}`}
+                      >
+                        <option value="">Choose a vision model</option>
+                        {(settings.visionModel && !clips.includes(settings.visionModel) ? [settings.visionModel, ...clips] : clips).map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        value={settings.visionModel}
+                        onChange={(event) => saveModel(event.target.value)}
+                        placeholder="qwen3vl_4b_bf16.safetensors"
+                        className={`mt-1 ${field}`}
+                      />
+                    )}
+                  </label>
+                ) : (
+                  <label className="text-[12px] text-zinc-400">
+                    Model id
+                    <input
+                      value={settings.visionModel}
+                      onChange={(event) => saveModel(event.target.value)}
+                      placeholder={visionGuide(settings.visionProvider).models[0]?.id}
+                      className={`mt-1 ${field}`}
+                    />
+                  </label>
+                )}
+              </div>
+              {settings.visionProvider === "comfyui" ? (
+                <div className="space-y-1.5">
+                  {clipNote ? <p className="text-[12px] text-zinc-500">{clipNote}</p> : null}
+                  <p className="text-[12px] text-zinc-500">The list is every model in your text encoders folder. You have to select a vision model. A click below fills the CLIP model. Put the download in ComfyUI’s models/text_encoders folder.</p>
+                  {visionGuide("comfyui").models.map((item) => (
+                    <div key={item.id} className={`rounded-md border ${settings.visionModel === item.id ? "border-da" : "border-lab-line"}`}>
+                      <button
+                        type="button"
+                        onClick={() => saveModel(item.id)}
+                        className="block w-full px-2.5 py-1.5 text-left"
+                      >
+                        <span className="block text-[12px] font-medium text-zinc-100">{item.id}</span>
+                        <span className="block text-[12px] text-zinc-500">{item.why}</span>
+                      </button>
+                      {item.href ? (
+                        <a href={item.href} target="_blank" rel="noreferrer" className="block px-2.5 pb-1.5 text-[12px] text-da">Download</a>
+                      ) : null}
+                    </div>
+                  ))}
+                  <label className="block text-[12px] text-zinc-400">
+                    <span className="flex items-center justify-between">
+                      Creativity
+                      <span className="text-zinc-200">{creativity.toFixed(2)}</span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0.01}
+                      max={2}
+                      step={0.01}
+                      value={creativity}
+                      onChange={(event) => setCreativity(temperatureOf(Number(event.target.value)))}
+                      onPointerUp={(event) => save("visionTemperature", temperatureOf(Number(event.currentTarget.value)))}
+                      onKeyUp={(event) => save("visionTemperature", temperatureOf(Number(event.currentTarget.value)))}
+                      onBlur={(event) => save("visionTemperature", temperatureOf(Number(event.currentTarget.value)))}
+                      className="mt-2 w-full accent-da"
+                    />
+                  </label>
+                  <p className="text-[12px] text-zinc-500">Lower stays closer to the picture. Higher varies the title and tags. ComfyUI has to be running. Each tag is one word for the subject, the place, and the defining objects, plus style words such as portrait or cinematic, art styles such as realism or painting, and a period joined into one word such as ancientegypt. Colours and abstract words are left out.</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <p className="text-[12px] text-zinc-500">Suggestions for this provider. A click fills the model id. The provider does not fill it for you.</p>
+                  {visionGuide(settings.visionProvider).models.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => saveModel(item.id)}
+                      className={`block w-full rounded-md border px-2.5 py-1.5 text-left ${settings.visionModel === item.id ? "border-da" : "border-lab-line hover:border-zinc-500"}`}
+                    >
+                      <span className="block text-[12px] font-medium text-zinc-100">{item.id}</span>
+                      <span className="block text-[12px] text-zinc-500">{item.why}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <label className="block text-[12px] text-zinc-400">
+                Base URL
+                <input
+                  value={settings.visionBaseUrl}
+                  onChange={(event) => save("visionBaseUrl", event.target.value)}
+                  onBlur={(event) => {
+                    if (settings.visionProvider === "comfyui") void loadClips(event.currentTarget.value);
+                  }}
+                  placeholder={settings.visionProvider === "claude" ? "Ignored for Claude" : settings.visionProvider === "comfyui" ? "Blank uses http://127.0.0.1:8188" : "Blank uses the provider default"}
+                  className={`mt-1 ${field}`}
+                />
+              </label>
+              {settings.visionProvider === "comfyui" ? null : (
+              <label className="block text-[12px] text-zinc-400">
+                {visionGuide(settings.visionProvider).keyLabel}
+                <input
+                  type="password"
+                  value={settings.visionKey}
+                  onChange={(event) => save("visionKey", event.target.value)}
+                  disabled={settings.visionProvider === "lmstudio"}
+                  placeholder={settings.visionProvider === "lmstudio" ? "Leave empty" : ""}
+                  className={`mt-1 ${field} disabled:opacity-50`}
+                />
+              </label>
+              )}
+            </>
+          ) : null}
+          </Section>
+          </div>
         </div>
       </div>
       {confirmHistory ? (
@@ -635,7 +674,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-2">
       <h2 className="text-[10px] font-semibold tracking-[0.16em] text-zinc-500 uppercase">{title}</h2>
-      <div className="space-y-3 rounded-lg border border-lab-line bg-lab-panel p-3">{children}</div>
+      <div className="space-y-4 rounded-lg border border-lab-line bg-lab-panel p-4">{children}</div>
     </section>
   );
 }

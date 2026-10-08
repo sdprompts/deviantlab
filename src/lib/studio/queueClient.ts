@@ -61,6 +61,8 @@ export function syncStudioConfig(settings: AppSettings, includeVision = false) {
     visionEnabled: settings.visionEnabled,
     visionTemperature: settings.visionTemperature,
     visionTagCount: settings.visionTagCount,
+    visionPrompt: settings.visionPrompt,
+    defaultTags: settings.defaultTags,
     watermarkCorner: settings.watermarkCorner,
     watermarkWidth: settings.watermarkWidth,
   };

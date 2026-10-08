@@ -17,6 +17,7 @@ export async function generateTitle(image: Blob): Promise<{ title: string; tags:
       apiKey: settings.visionKey,
       temperature: settings.visionTemperature,
       tagCount: settings.visionTagCount,
+      instructions: settings.visionPrompt,
       imageBase64: btoa(binary),
       mediaType: image.type || "image/jpeg",
     }),

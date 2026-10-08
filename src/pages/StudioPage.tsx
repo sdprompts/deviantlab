@@ -158,7 +158,7 @@ export function StudioPage() {
 
   if (!session) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex h-full min-h-0 flex-1 flex-col">
         <PageHeader kicker="Uploads" title="Uploads" />
         <div className="flex flex-1 flex-col justify-center px-8">
           <p className="max-w-sm text-sm leading-relaxed text-zinc-400">Sign in to queue uploads.</p>
@@ -219,7 +219,7 @@ export function StudioPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex h-full min-h-0 flex-1 flex-col">
       <PageHeader kicker="Uploads" title="Uploads">
         <div className="flex rounded-full bg-white/[0.04] p-0.5">
           {studioTabs.map((item) => (
@@ -532,6 +532,17 @@ function QueueRow({
     }
   }
 
+  async function sendStash() {
+    setRowError("");
+    try {
+      if (!(await save())) return;
+      await submitToStudio(post.id);
+      onChanged();
+    } catch (err) {
+      setRowError(err instanceof Error ? err.message : "Could not upload that file.");
+    }
+  }
+
   async function regenerate() {
     setRowError("");
     try {
@@ -749,9 +760,14 @@ function QueueRow({
               Regenerate
             </button>
           ) : null}
-          {post.status === "review" ? (
+          {post.status === "review" && !post.studio ? (
             <button type="button" onClick={() => void approve()} className="h-8 rounded-md bg-da px-3 text-[12px] font-semibold text-black hover:bg-[#3ad866]">
-              {post.studio ? "Send to Stash" : "Add to queue"}
+              Add to queue
+            </button>
+          ) : null}
+          {post.status === "review" ? (
+            <button type="button" onClick={() => void (post.studio ? approve() : sendStash())} className={`h-8 rounded-md px-3 text-[12px] ${post.studio ? "bg-da font-semibold text-black hover:bg-[#3ad866]" : "border border-lab-line text-zinc-200 hover:border-zinc-500"}`}>
+              Send to Stash
             </button>
           ) : null}
           {canPublishNow ? (

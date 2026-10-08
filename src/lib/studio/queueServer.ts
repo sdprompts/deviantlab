@@ -63,6 +63,8 @@ type StudioConfig = {
   watermarkWidth: number;
   visionTemperature: number;
   visionTagCount: number;
+  visionPrompt: string;
+  defaultTags: string;
 };
 
 const configDefaults: StudioConfig = {
@@ -81,6 +83,8 @@ const configDefaults: StudioConfig = {
   watermarkWidth: 400,
   visionTemperature: 0.7,
   visionTagCount: 25,
+  visionPrompt: "",
+  defaultTags: "",
 };
 
 let db: DatabaseSync | null = null;
@@ -190,6 +194,8 @@ function readConfig(): StudioConfig {
       watermarkWidth: markWidthOf(parsed.watermarkWidth),
       visionTemperature: temperatureOf(parsed.visionTemperature),
       visionTagCount: tagCountOf(parsed.visionTagCount),
+      visionPrompt: typeof parsed.visionPrompt === "string" ? parsed.visionPrompt : "",
+      defaultTags: defaultTagsOf(parsed.defaultTags),
     };
   } catch {
     return { ...configDefaults };
@@ -326,6 +332,24 @@ function tagCountOf(value: unknown): number {
   return Math.min(30, Math.max(1, count));
 }
 
+function defaultTagsOf(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return cleanTags(value).join(", ");
+}
+
+function withDefaultTags(generated: string): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const tag of [...cleanTags(readConfig().defaultTags), ...cleanTags(generated)]) {
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(tag);
+    if (out.length >= 30) break;
+  }
+  return out.join(", ");
+}
+
 async function saveThumb(id: string, bytes: Buffer) {
   try {
     const thumb = await sharp(bytes).rotate().resize({ width: 240, height: 240, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 70 }).toBuffer();
@@ -376,7 +400,8 @@ async function titleFile(id: string) {
   const row = database().prepare("SELECT status FROM posts WHERE id = ?").get(id) as { status?: string } | undefined;
   if (!row || row.status !== "titling") return;
   if (!readConfig().visionEnabled) {
-    database().prepare("UPDATE posts SET status = 'review', error = '' WHERE id = ? AND status = 'titling'").run(id);
+    const tags = withDefaultTags("");
+    database().prepare("UPDATE posts SET status = 'review', tags = CASE WHEN trim(tags) = '' THEN ? ELSE tags END, error = '' WHERE id = ? AND status = 'titling'").run(tags, id);
     return;
   }
   try {
@@ -392,10 +417,11 @@ async function titleFile(id: string) {
       mediaType: "image/jpeg",
       temperature: config.visionTemperature,
       tagCount: config.visionTagCount,
+      instructions: config.visionPrompt,
     });
     const current = database().prepare("SELECT status, title, tags, studio FROM posts WHERE id = ?").get(id) as { status?: string; title?: string; tags?: string; studio?: number } | undefined;
     if (!current || current.status !== "titling") return;
-    const keptTags = !replace && cleanTags(current.tags || "").length > 0 ? (current.tags || "") : named.tags.join(", ");
+    const keptTags = !replace && cleanTags(current.tags || "").length > 0 ? (current.tags || "") : withDefaultTags(named.tags.join(", "));
     const title = !replace && current.title?.trim() ? current.title.trim() : named.title;
     if (Number(current.studio) === 1) {
       database().prepare("UPDATE posts SET title = ?, tags = ?, error = '' WHERE id = ? AND status = 'titling'").run(title, keptTags, id);
@@ -573,6 +599,8 @@ async function saveConfig(body: Partial<StudioConfig> & { watermark?: string }) 
     watermarkWidth: body.watermarkWidth === undefined ? current.watermarkWidth : markWidthOf(body.watermarkWidth),
     visionTemperature: temperatureOf(body.visionTemperature === undefined ? current.visionTemperature : body.visionTemperature),
     visionTagCount: tagCountOf(body.visionTagCount === undefined ? current.visionTagCount : body.visionTagCount),
+    visionPrompt: body.visionPrompt === undefined ? current.visionPrompt : String(body.visionPrompt || "").trim().slice(0, 4000),
+    defaultTags: body.defaultTags === undefined ? current.defaultTags : defaultTagsOf(body.defaultTags),
   };
   kvSet("config", JSON.stringify(next));
   const localVision = next.visionProvider === "lmstudio" || next.visionProvider === "comfyui";
@@ -768,10 +796,11 @@ async function submitStash(id: string, title: string, tags: string): Promise<str
 
 async function submitStudio(id: string): Promise<string> {
   const row = database().prepare("SELECT status, title, tags, itemid, studio FROM posts WHERE id = ?").get(id) as { status?: string; title?: string; tags?: string; itemid?: string; studio?: number } | undefined;
-  if (!row || Number(row.studio) !== 1) return "That file is not a Studio upload.";
+  if (!row) return "That file is not ready to send.";
   if (row.status === "stashed" || row.status === "published" || row.status === "posting") return "";
+  if (row.status !== "review" && Number(row.studio) !== 1) return "That file is not ready to send.";
   if (row.itemid) {
-    database().prepare("UPDATE posts SET status = 'stashed', error = '' WHERE id = ?").run(id);
+    database().prepare("UPDATE posts SET status = 'stashed', studio = 1, error = '' WHERE id = ?").run(id);
     return "";
   }
   const title = row.title?.trim() || "";
@@ -782,7 +811,7 @@ async function submitStudio(id: string): Promise<string> {
   }
   try {
     const itemid = await submitStash(id, title, row.tags || "");
-    database().prepare("UPDATE posts SET status = 'stashed', itemid = ?, error = '' WHERE id = ?").run(itemid, id);
+    database().prepare("UPDATE posts SET status = 'stashed', studio = 1, itemid = ?, error = '' WHERE id = ?").run(itemid, id);
     await rm(path.join(FILES, id), { force: true });
     return "";
   } catch (error) {

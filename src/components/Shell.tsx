@@ -3,11 +3,13 @@ import { Sidebar } from "./Sidebar";
 
 export function Shell() {
   return (
-    <div className="flex h-screen overflow-hidden bg-lab text-zinc-100">
+    <div className="flex h-full min-h-0 overflow-hidden bg-lab text-zinc-100">
       <Sidebar />
-      <main className="flex min-w-0 flex-1 flex-col">
-        <Outlet />
-        <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-lab-line px-4 py-2">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <Outlet />
+        </div>
+        <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-lab-line bg-lab px-4 py-2">
           <a
             href="https://github.com/sdprompts/deviantlab"
             target="_blank"

@@ -7,6 +7,7 @@ export type VisionRequest = {
   mediaType?: string;
   temperature?: number;
   tagCount?: number;
+  instructions?: string;
 };
 
 const TITLE_RULE = "The title is a gallery artwork title: evocative, specific, and a little unexpected, a name for the mood, the stakes, or the moment. Metaphor is welcome when it fits the picture. Do not list the objects, and do not write a caption. 3 to 8 words, at most 50 characters, with no quotation marks.";
@@ -17,15 +18,26 @@ function tagCountOf(value: unknown): number {
   return Math.min(30, Math.max(1, count));
 }
 
-function titlePrompt(count: number): string {
-  return `Look at the image. Reply with JSON only, no markdown: {"title":"...","tags":["..."]}. ${TITLE_RULE} Provide ${count} tags. Join the words of a tag into one word. Remove spaces, hyphens, underscores, and other special characters, like scifi or postapocalyptic. No # and no sentences. Cover subject, mood, style, colours, and setting.`;
+const TAG_RULE = "Each tag is one plain word. Name the main subject with the ordinary word, then the place, then the few objects that define the picture. Skip background clutter. Add a few style words when they fit, such as portrait or cinematic, art style words when they fit, such as realism or painting, and a period word when it fits, joined into one word, such as ancientegypt. Do not name colours. Do not add mood or abstract words. Do not invent tags to fill the list. No # and no sentences.";
+
+const DEFAULT_INSTRUCTIONS = `${TITLE_RULE} ${TAG_RULE}`;
+
+function instructionsOf(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) return DEFAULT_INSTRUCTIONS;
+  return value.trim().slice(0, 4000);
 }
 
-function comfyPrompt(count: number): string {
+function titlePrompt(count: number, instructions: string): string {
+  return `Look at the image. Reply with JSON only, no markdown: {"title":"...","tags":["..."]}. Provide up to ${count} tags. ${instructions}`;
+}
+
+function comfyPrompt(count: number, instructions: string): string {
   return `Look at the image. Reply in exactly this format and nothing else:
 
-Title: <${TITLE_RULE}>
-Tags: <comma-separated tags, most specific first, ${count} tags. Join the words of a tag. No spaces, no hyphens, and no special characters>`;
+Title: <gallery title, 3 to 8 words, at most 50 characters>
+Tags: <comma-separated single words, most specific first, up to ${count} tags>
+
+${instructions}`;
 }
 
 function oneTag(raw: string): string {
@@ -130,7 +142,7 @@ function historyError(messages: unknown): string {
   return "ComfyUI could not generate a title.";
 }
 
-async function comfyVision(baseUrl: string, model: string, temperature: unknown, image: string, mediaType: string, tagCount: number): Promise<{ title: string; tags: string[] }> {
+async function comfyVision(baseUrl: string, model: string, temperature: unknown, image: string, mediaType: string, tagCount: number, instructions: string): Promise<{ title: string; tags: string[] }> {
   const root = comfyRoot(baseUrl);
   const ext = mediaType === "image/png" ? "png" : "jpg";
   const form = new FormData();
@@ -162,7 +174,7 @@ async function comfyVision(baseUrl: string, model: string, temperature: unknown,
       class_type: "TextGenerate",
       inputs: {
         clip: ["1", 0],
-        prompt: comfyPrompt(tagCount),
+        prompt: comfyPrompt(tagCount, instructions),
         image: ["2", 0],
         max_length: 512,
         sampling_mode: "on",
@@ -230,9 +242,10 @@ export async function runVision(input: VisionRequest): Promise<{ title: string; 
   if (!model) throw new Error(provider === "comfyui" ? "Choose a CLIP file in Settings." : "Set a vision model in Settings.");
   if (!image) throw new Error("This file has no image to title.");
   const count = tagCountOf(input.tagCount);
-  const prompt = titlePrompt(count);
+  const instructions = instructionsOf(input.instructions);
+  const prompt = titlePrompt(count, instructions);
   if (provider === "comfyui") {
-    return comfyVision(input.baseUrl || "", model, input.temperature, image, mediaType, count);
+    return comfyVision(input.baseUrl || "", model, input.temperature, image, mediaType, count, instructions);
   }
   if (provider !== "lmstudio" && !(input.apiKey || "").trim()) throw new Error("Set the vision API key in Settings.");
 

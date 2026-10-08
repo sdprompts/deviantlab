@@ -64,7 +64,7 @@ On Windows, close the server window and double-click `update.bat` to pull the la
 
 ## What it does
 
-The Uploads page has one drop box.
+The Uploads page has one drop box. The footer stays at the bottom of the window. Uploads and Settings scroll above it.
 
 - **Queue for publish** puts the file in Working. After you add it to the queue, the dev server publishes one file per interval. **Post every** in Settings is that interval. The default is 30 minutes, and the allowed range is 5 to 1440.
 - **Send to Stash** submits the file to Sta.sh and does not publish it. Those files are not placed in a gallery folder. After they are sent, they show on **Sent to Stash**.
@@ -72,7 +72,7 @@ The Uploads page has one drop box.
 
 A title and at least one tag are required before a file can join the queue or be sent to Sta.sh. You can type them, or let a vision model fill them in, then edit them.
 
-**Working** holds files that still need a title and tags. **Regenerate** asks the vision model again and replaces the title and tags. **Queued** holds files waiting for the schedule. **Published** lists files this app has published, newest first, with the date and time. **Sent to Stash** lists files submitted to Sta.sh.
+**Working** holds files that still need a title and tags. **Regenerate** asks the vision model again and replaces the title and tags. **Add to queue** schedules a publish. **Send to Stash** submits that file to Sta.sh instead. **Queued** holds files waiting for the schedule. **Published** lists files this app has published, newest first, with the date and time. **Sent to Stash** lists files submitted to Sta.sh.
 
 On Queued, **Cards** and **Thumbs** switch the layout. **Pause** stops later publishes and leaves the one already sending alone. **Shuffle** randomizes the files that are still waiting. **Publish now** sends one file and does not reset the schedule.
 
@@ -84,7 +84,7 @@ The queue, the image copies DeviantLab keeps, and the watermark PNG (`.studio/wa
 
 ## Settings
 
-Settings is split into **Publishing**, **Titles and tags**, **Watermark**, and **History**.
+Settings uses two columns. **Publishing**, **Watermark**, and **History** stack on the left. **Titles and tags** is the right column.
 
 ### Publishing
 
@@ -100,7 +100,7 @@ In Settings, **Suggest titles and tags** is on by default. Turn it off and the t
 
 While it is on, each drop sends one JPEG, resized to fit inside 1024×1024, and asks for a title and tags. The reply is capped at 800 tokens. You can edit both before the file is queued or sent. **Regenerate** on Working asks again and replaces the title and tags.
 
-The title is a gallery title: a name for the mood or the moment, not a list of what is in the picture. It is at most 50 characters. **Tags to write** is how many tags to create, from 1 to 30. 25 is the default. Words that belong to one tag are joined, and spaces, hyphens, and other special characters are removed, so `sci-fi` becomes `scifi`.
+The title is a gallery title: a name for the mood or the moment, not a list of what is in the picture. It is at most 50 characters. **Tags to write** is the most tags the model creates, from 1 to 30. 25 is the default. **Default tags** are added to every new upload and when a title is regenerated. Files already in Working keep the tags they have until then. **Title and tag instructions** are sent with every title. Leave that box blank and the built-in instructions are used. The reply format stays fixed. Each tag is one plain word for the main subject, the place, and the objects that define the picture, plus style words such as portrait or cinematic, art styles such as realism or painting, and a period joined into one word such as ancientegypt. Background clutter, colours, mood, and abstract words are left out. Spaces and special characters are removed.
 
 Set **Provider** in Settings. Switching providers fills **Model id** with the last model you used for that provider. A provider you have not used yet stays blank. Suggested model ids are listed under the provider. Click one to fill **Model id**, or type a different id. Leave **Base URL** blank to use the provider default. Paste the **API key** for that provider. LM Studio and ComfyUI have no key. The key is stored in this browser and on the dev server. It is not written into the repo.
 

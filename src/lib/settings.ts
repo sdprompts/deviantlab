@@ -14,6 +14,8 @@ export type AppSettings = {
   visionKey: string;
   visionTemperature: number;
   visionTagCount: number;
+  visionPrompt: string;
+  defaultTags: string;
   publishMature: boolean;
   publishAi: boolean;
   publishNoai: boolean;
@@ -37,6 +39,8 @@ const defaults: AppSettings = {
   visionKey: "",
   visionTemperature: 0.7,
   visionTagCount: 25,
+  visionPrompt: "",
+  defaultTags: "",
   publishMature: false,
   publishAi: true,
   publishNoai: false,
@@ -71,6 +75,8 @@ export function readSettings(): AppSettings {
       watermarkWidth: markWidthOf(parsed.watermarkWidth),
       visionTemperature: temperatureOf(parsed.visionTemperature),
       visionTagCount: tagCountOf(parsed.visionTagCount),
+      visionPrompt: promptOf(parsed.visionPrompt),
+      defaultTags: defaultTagsOf(parsed.defaultTags),
     };
   } catch {
     return { ...defaults };
@@ -145,6 +151,28 @@ export function tagCountOf(value: unknown): number {
   const count = Math.round(Number(value));
   if (!Number.isFinite(count)) return 25;
   return Math.min(30, Math.max(1, count));
+}
+
+export const defaultVisionPrompt = "The title is a gallery artwork title: evocative, specific, and a little unexpected, a name for the mood, the stakes, or the moment. Metaphor is welcome when it fits the picture. Do not list the objects, and do not write a caption. 3 to 8 words, at most 50 characters, with no quotation marks. Each tag is one plain word. Name the main subject with the ordinary word, then the place, then the few objects that define the picture. Skip background clutter. Add a few style words when they fit, such as portrait or cinematic, art style words when they fit, such as realism or painting, and a period word when it fits, joined into one word, such as ancientegypt. Do not name colours. Do not add mood or abstract words. Do not invent tags to fill the list. No # and no sentences.";
+
+export function promptOf(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) return defaultVisionPrompt;
+  return value.trim().slice(0, 4000);
+}
+
+export function defaultTagsOf(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  for (const part of value.split(/[,\n]/)) {
+    const tag = part.trim().replace(/^#+/, "").replace(/[^\p{L}\p{N}]+/gu, "");
+    const key = tag.toLowerCase();
+    if (!tag || tag.length > 40 || seen.has(key)) continue;
+    seen.add(key);
+    tags.push(tag);
+    if (tags.length >= 30) break;
+  }
+  return tags.join(", ");
 }
 
 export function markWidthOf(value: unknown): number {
