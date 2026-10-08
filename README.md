@@ -54,7 +54,7 @@ Start the app:
 npm run dev
 ```
 
-On Windows, double-click `start.bat`. It serves the app at [http://localhost:5173](http://localhost:5173). Close that window to stop it.
+On Windows, double-click `start.bat`. The first time, it installs dependencies, then serves the app at [http://localhost:5173](http://localhost:5173). Close that window to stop it.
 
 Open [http://localhost:5173](http://localhost:5173) and click **Sign in**. DeviantArt sends you back to the callback address above. After that, the sidebar shows your username.
 
