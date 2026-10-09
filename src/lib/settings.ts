@@ -20,6 +20,7 @@ export type AppSettings = {
   publishAi: boolean;
   publishNoai: boolean;
   defaultFolder: string;
+  displayResolution: number;
   watermarkCorner: WatermarkCorner;
   watermarkWidth: number;
 };
@@ -45,6 +46,7 @@ const defaults: AppSettings = {
   publishAi: true,
   publishNoai: false,
   defaultFolder: "featured",
+  displayResolution: 0,
   watermarkCorner: "bottom-right",
   watermarkWidth: 400,
 };
@@ -67,6 +69,7 @@ export function readSettings(): AppSettings {
       publishAi: parsed.publishAi !== false,
       publishNoai: parsed.publishNoai === true,
       defaultFolder: folderDefaultOf(parsed.defaultFolder),
+      displayResolution: displayResolutionOf(parsed.displayResolution),
       visionEnabled: parsed.visionEnabled !== false,
       visionProvider,
       visionModel: visionModels[visionProvider] || "",
@@ -173,6 +176,14 @@ export function defaultTagsOf(value: unknown): string {
     if (tags.length >= 30) break;
   }
   return tags.join(", ");
+}
+
+export const displayWidths = [0, 400, 600, 800, 900, 1024, 1280, 1600, 1920] as const;
+
+export function displayResolutionOf(value: unknown): number {
+  const index = Math.round(Number(value));
+  if (!Number.isInteger(index) || index < 0 || index >= displayWidths.length) return 0;
+  return index;
 }
 
 export function markWidthOf(value: unknown): number {

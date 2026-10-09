@@ -10,7 +10,7 @@ import {
   updateLocalStash,
   type LocalStashItem,
 } from "../lib/da/stash";
-import { folderLabel, loadGalleryFolders, type GalleryFolder } from "../lib/da/folders";
+import { folderLabel, isBuiltInFeatured, loadGalleryFolders, type GalleryFolder } from "../lib/da/folders";
 import { acceptedFile } from "../lib/studio/preprocess";
 import {
   approveQueuedPost,
@@ -27,7 +27,7 @@ import {
   type QueuePost,
   type QueueSnapshot,
 } from "../lib/studio/queueClient";
-import { readSettings } from "../lib/settings";
+import { displayResolutionOf, displayWidths, readSettings } from "../lib/settings";
 
 type StudioTab = "working" | "studio" | "queued" | "published";
 type QueueView = "cards" | "thumbs";
@@ -458,6 +458,19 @@ function publishedWhen(ms: number): string {
   });
 }
 
+function uploadDetail(post: { bytes?: number; width?: number; height?: number }): string {
+  const parts: string[] = [];
+  const bytes = Number(post.bytes) || 0;
+  const width = Number(post.width) || 0;
+  const height = Number(post.height) || 0;
+  if (bytes > 0) {
+    const mb = bytes / (1024 * 1024);
+    parts.push(`${mb >= 10 ? mb.toFixed(1) : mb.toFixed(2)} MB`);
+  }
+  if (width > 0 && height > 0) parts.push(`${width} × ${height} px`);
+  return parts.join(" · ");
+}
+
 function QueueRow({
   post,
   folders,
@@ -488,6 +501,7 @@ function QueueRow({
   const [noai, setNoai] = useState(post.noai === true);
   const [galleries, setGalleries] = useState<string[]>(post.galleries ?? []);
   const [feature, setFeature] = useState(post.feature !== false);
+  const [displayResolution, setDisplayResolution] = useState(displayResolutionOf(post.displayResolution));
   const [rowError, setRowError] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [confirm, setConfirm] = useState<null | "publish" | "remove">(null);
@@ -502,10 +516,11 @@ function QueueRow({
     setNoai(post.noai === true);
     setGalleries(post.galleries ?? []);
     setFeature(post.feature !== false);
-  }, [post.id, post.status, post.title, post.tags, post.mature, post.ai, post.noai, post.feature, (post.galleries ?? []).join(",")]);
+    setDisplayResolution(displayResolutionOf(post.displayResolution));
+  }, [post.id, post.status, post.title, post.tags, post.mature, post.ai, post.noai, post.feature, post.displayResolution, (post.galleries ?? []).join(",")]);
 
-  function flags(patch: Partial<{ mature: boolean; ai: boolean; noai: boolean; galleries: string[]; feature: boolean }> = {}) {
-    return { mature, ai, noai, galleries, feature, ...patch };
+  function flags(patch: Partial<{ mature: boolean; ai: boolean; noai: boolean; galleries: string[]; feature: boolean; displayResolution: number }> = {}) {
+    return { mature, ai, noai, galleries, feature, displayResolution, ...patch };
   }
 
   async function save(next = flags()): Promise<boolean> {
@@ -574,9 +589,10 @@ function QueueRow({
     onChanged();
   }
 
-  const canPublishNow = post.status === "waiting" || post.status === "submitted" || post.status === "failed";
+  const canPublishNow = post.status === "waiting" || post.status === "submitted" || post.status === "failed" || (post.status === "review" && !post.studio);
 
   const label = title.trim() || post.name;
+  const detail = uploadDetail(post);
   const confirmBox = confirm ? (
     <ConfirmDialog
       title={label}
@@ -615,6 +631,9 @@ function QueueRow({
               <path d="M3.2 9.2v3.2a1 1 0 0 0 1 1h7.6a1 1 0 0 0 1-1V9.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
             </svg>
           </button>
+        ) : null}
+        {detail ? (
+          <p className="absolute top-1 left-1 max-w-[calc(100%-0.5rem)] rounded bg-black/75 px-1.5 py-0.5 text-[10px] leading-tight tabular-nums text-zinc-100">{detail}</p>
         ) : null}
         {rowError ? <p className="px-2 py-1 text-[11px] text-zinc-400">{rowError}</p> : null}
       </li>
@@ -675,6 +694,7 @@ function QueueRow({
           {post.watermark === false ? <span className="shrink-0 text-[11px] text-zinc-500">No watermark</span> : null}
           <span className="shrink-0 text-[11px] tabular-nums text-zinc-500">{post.status === "published" ? publishedWhen(post.publishedAt || post.createdAt) : statusLabel[post.status]}</span>
         </div>
+        {detail ? <p className="text-[12px] tabular-nums text-zinc-500">{detail}</p> : null}
         {showTags ? (
           <label className="block text-[12px] text-zinc-500">
             Tags ({stashTags(tags).length})
@@ -718,6 +738,25 @@ function QueueRow({
           </div>
         ) : null}
         {!locked && !post.studio ? (
+          <label className="block text-[12px] text-zinc-500">
+            Display width
+            <select
+              value={displayResolution}
+              onChange={(event) => {
+                const nextValue = displayResolutionOf(event.target.value);
+                const next = flags({ displayResolution: nextValue });
+                setDisplayResolution(nextValue);
+                void save(next);
+              }}
+              className="mt-1 h-8 w-full rounded-md border border-lab-line bg-transparent px-2 text-[13px] text-zinc-100 outline-none focus:border-zinc-500"
+            >
+              {displayWidths.map((width, index) => (
+                <option key={index} value={index}>{width ? `${width} px wide` : "Original"}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {!locked && !post.studio ? (
           <fieldset className="max-h-40 space-y-1.5 overflow-y-auto text-[12px] text-zinc-300">
             <legend className="text-[12px] text-zinc-500">Folders</legend>
             <label className="flex items-center gap-2">
@@ -732,7 +771,7 @@ function QueueRow({
               />
               Featured
             </label>
-            {folders.map((folder) => {
+            {folders.filter((folder) => !isBuiltInFeatured(folder)).map((folder) => {
               const checked = galleries.includes(folder.id);
               return (
                 <label key={folder.id} className="flex items-center gap-2">
@@ -765,14 +804,14 @@ function QueueRow({
               Add to queue
             </button>
           ) : null}
-          {post.status === "review" ? (
-            <button type="button" onClick={() => void (post.studio ? approve() : sendStash())} className={`h-8 rounded-md px-3 text-[12px] ${post.studio ? "bg-da font-semibold text-black hover:bg-[#3ad866]" : "border border-lab-line text-zinc-200 hover:border-zinc-500"}`}>
-              Send to Stash
-            </button>
-          ) : null}
           {canPublishNow ? (
             <button type="button" disabled={publishing} onClick={() => setConfirm("publish")} className="h-8 rounded-md bg-da px-3 text-[12px] font-semibold text-black hover:bg-[#3ad866] disabled:opacity-60">
               {publishing ? "Publishing" : "Publish now"}
+            </button>
+          ) : null}
+          {post.status === "review" ? (
+            <button type="button" onClick={() => void (post.studio ? approve() : sendStash())} className={`h-8 rounded-md px-3 text-[12px] ${post.studio ? "bg-da font-semibold text-black hover:bg-[#3ad866]" : "border border-lab-line text-zinc-200 hover:border-zinc-500"}`}>
+              Send to Stash
             </button>
           ) : null}
           {post.status === "failed" ? (

@@ -39,6 +39,10 @@ type PostRow = {
   published_at: number;
   galleries: string;
   feature: number;
+  display_resolution: number;
+  width: number;
+  height: number;
+  bytes: number;
 };
 
 type StoredSession = {
@@ -59,6 +63,7 @@ type StudioConfig = {
   publishAi: boolean;
   publishNoai: boolean;
   defaultFolder: string;
+  displayResolution: number;
   watermarkCorner: string;
   watermarkWidth: number;
   visionTemperature: number;
@@ -79,6 +84,7 @@ const configDefaults: StudioConfig = {
   publishAi: true,
   publishNoai: false,
   defaultFolder: "featured",
+  displayResolution: 0,
   watermarkCorner: "bottom-right",
   watermarkWidth: 400,
   visionTemperature: 0.7,
@@ -126,6 +132,10 @@ function database(): DatabaseSync {
   if (!names.has("published_at")) db.exec("ALTER TABLE posts ADD COLUMN published_at INTEGER NOT NULL DEFAULT 0");
   if (!names.has("galleries")) db.exec("ALTER TABLE posts ADD COLUMN galleries TEXT NOT NULL DEFAULT '[]'");
   if (!names.has("feature")) db.exec("ALTER TABLE posts ADD COLUMN feature INTEGER NOT NULL DEFAULT 1");
+  if (!names.has("width")) db.exec("ALTER TABLE posts ADD COLUMN width INTEGER NOT NULL DEFAULT 0");
+  if (!names.has("height")) db.exec("ALTER TABLE posts ADD COLUMN height INTEGER NOT NULL DEFAULT 0");
+  if (!names.has("bytes")) db.exec("ALTER TABLE posts ADD COLUMN bytes INTEGER NOT NULL DEFAULT 0");
+  if (!names.has("display_resolution")) db.exec("ALTER TABLE posts ADD COLUMN display_resolution INTEGER NOT NULL DEFAULT 0");
   db.exec("UPDATE posts SET published_at = created_at WHERE status = 'published' AND published_at = 0");
   if (addedFlag) {
     const stored = db.prepare("SELECT value FROM kv WHERE key = 'config'").get() as { value?: string } | undefined;
@@ -175,6 +185,20 @@ function folderDefaultOf(value: unknown): string {
   return "featured";
 }
 
+function displayResolutionOf(value: unknown): number {
+  const index = Math.round(Number(value));
+  if (!Number.isInteger(index) || index < 0 || index > 8) return 0;
+  return index;
+}
+
+function publishResolution(preset: unknown, imageWidth: number): number {
+  const widths = [0, 400, 600, 800, 900, 1024, 1280, 1600, 1920];
+  const index = displayResolutionOf(preset);
+  const target = widths[index] ?? 0;
+  if (target > 0 && imageWidth > 0 && imageWidth < target) return 0;
+  return index;
+}
+
 function clampMinutes(value: unknown): number {
   const minutes = Math.round(Number(value));
   if (!Number.isFinite(minutes)) return configDefaults.scheduleMinutes;
@@ -190,6 +214,7 @@ function readConfig(): StudioConfig {
       scheduleMinutes: clampMinutes(parsed.scheduleMinutes),
       visionEnabled: parsed.visionEnabled !== false,
       defaultFolder: folderDefaultOf(parsed.defaultFolder),
+      displayResolution: displayResolutionOf(parsed.displayResolution),
       watermarkCorner: cornerOf(parsed.watermarkCorner),
       watermarkWidth: markWidthOf(parsed.watermarkWidth),
       visionTemperature: temperatureOf(parsed.visionTemperature),
@@ -231,6 +256,7 @@ export function startQueue(serverEnv: Record<string, string>) {
   if (serverGlobals.__deviantlabQueue) clearInterval(serverGlobals.__deviantlabQueue);
   void mkdir(FILES, { recursive: true }).then(() => mkdir(THUMBS, { recursive: true })).then(() => {
     database();
+    void fillMissingImageFacts();
     serverGlobals.__deviantlabQueue = setInterval(() => void tick(), 5000);
   }).catch(() => undefined);
 }
@@ -251,7 +277,7 @@ function readRaw(req: IncomingMessage): Promise<Buffer> {
 }
 
 function listPosts(): PostRow[] {
-  return database().prepare("SELECT id, name, status, title, tags, error, itemid, url, deviation_id, created_at, mature, ai, noai, watermark, studio, published_at, galleries, feature FROM posts ORDER BY sort ASC, created_at ASC").all() as PostRow[];
+  return database().prepare("SELECT id, name, status, title, tags, error, itemid, url, deviation_id, created_at, mature, ai, noai, watermark, studio, published_at, galleries, feature, display_resolution, width, height, bytes FROM posts ORDER BY sort ASC, created_at ASC").all() as PostRow[];
 }
 
 function publicPost(row: PostRow) {
@@ -274,6 +300,10 @@ function publicPost(row: PostRow) {
     publishedAt: Number(row.published_at) || 0,
     galleries: parseGalleryIds(row.galleries),
     feature: Number(row.feature) !== 0,
+    displayResolution: displayResolutionOf(row.display_resolution),
+    width: Number(row.width) || 0,
+    height: Number(row.height) || 0,
+    bytes: Number(row.bytes) || 0,
   };
 }
 
@@ -350,6 +380,28 @@ function withDefaultTags(generated: string): string {
   return out.join(", ");
 }
 
+async function imageFacts(bytes: Buffer): Promise<{ width: number; height: number; bytes: number }> {
+  try {
+    const meta = await sharp(bytes).rotate().metadata();
+    return { width: meta.width ?? 0, height: meta.height ?? 0, bytes: bytes.length };
+  } catch {
+    return { width: 0, height: 0, bytes: bytes.length };
+  }
+}
+
+async function fillMissingImageFacts() {
+  const rows = database().prepare("SELECT id FROM posts WHERE width = 0 OR height = 0 OR bytes = 0").all() as { id: string }[];
+  for (const row of rows) {
+    try {
+      const file = await readFile(path.join(FILES, row.id));
+      const facts = await imageFacts(file);
+      database().prepare("UPDATE posts SET width = ?, height = ?, bytes = ? WHERE id = ?").run(facts.width, facts.height, facts.bytes, row.id);
+    } catch {
+      // The stored file is missing. Leave the zeros.
+    }
+  }
+}
+
 async function saveThumb(id: string, bytes: Buffer) {
   try {
     const thumb = await sharp(bytes).rotate().resize({ width: 240, height: 240, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 70 }).toBuffer();
@@ -363,12 +415,13 @@ async function addFile(name: string, bytes: Buffer, watermark: boolean, studio: 
   const id = crypto.randomUUID();
   await writeFile(path.join(FILES, id), bytes);
   await saveThumb(id, bytes);
+  const facts = await imageFacts(bytes);
   const config = readConfig();
   const placed = folderDefaultOf(config.defaultFolder);
   const galleryIds = parseGalleryIds([placed]);
   const now = Date.now();
   database().prepare(
-    "INSERT INTO posts (id, name, status, title, tags, error, itemid, url, deviation_id, created_at, sort, mature, ai, noai, watermark, studio, galleries, feature) VALUES (?, ?, 'titling', '', '', '', '', '', '', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO posts (id, name, status, title, tags, error, itemid, url, deviation_id, created_at, sort, mature, ai, noai, watermark, studio, galleries, feature, width, height, bytes, display_resolution) VALUES (?, ?, 'titling', '', '', '', '', '', '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).run(
     id,
     name,
@@ -381,6 +434,10 @@ async function addFile(name: string, bytes: Buffer, watermark: boolean, studio: 
     studio ? 1 : 0,
     JSON.stringify(galleryIds),
     placed === "featured" ? 1 : 0,
+    facts.width,
+    facts.height,
+    facts.bytes,
+    displayResolutionOf(config.displayResolution),
   );
   queueTitle(id);
   return id;
@@ -476,10 +533,10 @@ function safeJson(value: string): unknown {
   }
 }
 
-function patchPost(id: string, title: string, tags: string, flags: { mature: boolean; ai: boolean; noai: boolean; galleries?: string[]; feature?: boolean }) {
+function patchPost(id: string, title: string, tags: string, flags: { mature: boolean; ai: boolean; noai: boolean; galleries?: string[]; feature?: boolean; displayResolution?: number }) {
   const row = database().prepare("SELECT status FROM posts WHERE id = ?").get(id) as { status?: string } | undefined;
   if (!row || row.status === "published" || row.status === "posting" || row.status === "stashed") return false;
-  database().prepare("UPDATE posts SET title = ?, tags = ?, mature = ?, ai = ?, noai = ?, galleries = ?, feature = ? WHERE id = ?").run(
+  database().prepare("UPDATE posts SET title = ?, tags = ?, mature = ?, ai = ?, noai = ?, galleries = ?, feature = ?, display_resolution = ? WHERE id = ?").run(
     title.slice(0, 50),
     tags.slice(0, 2000),
     flags.mature ? 1 : 0,
@@ -487,6 +544,7 @@ function patchPost(id: string, title: string, tags: string, flags: { mature: boo
     flags.noai ? 1 : 0,
     JSON.stringify(parseGalleryIds(flags.galleries ?? [])),
     flags.feature === false ? 0 : 1,
+    displayResolutionOf(flags.displayResolution),
     id,
   );
   return true;
@@ -594,6 +652,7 @@ async function saveConfig(body: Partial<StudioConfig> & { watermark?: string }) 
     publishAi: body.publishAi === undefined ? current.publishAi : body.publishAi !== false,
     publishNoai: body.publishNoai === undefined ? current.publishNoai : body.publishNoai === true,
     defaultFolder: body.defaultFolder === undefined ? current.defaultFolder : folderDefaultOf(body.defaultFolder),
+    displayResolution: body.displayResolution === undefined ? current.displayResolution : displayResolutionOf(body.displayResolution),
     visionEnabled: body.visionEnabled === undefined ? current.visionEnabled : body.visionEnabled === true,
     watermarkCorner: body.watermarkCorner === undefined ? current.watermarkCorner : cornerOf(body.watermarkCorner),
     watermarkWidth: body.watermarkWidth === undefined ? current.watermarkWidth : markWidthOf(body.watermarkWidth),
@@ -845,6 +904,7 @@ async function postOne(row: PostRow) {
   const galleryIds = parseGalleryIds(row.galleries);
   for (const galleryId of galleryIds) body.append("galleryids[]", galleryId);
   body.set("feature", Number(row.feature) === 0 ? "false" : "true");
+  body.set("display_resolution", String(publishResolution(row.display_resolution, Number(row.width) || 0)));
   const published = await daFetch("/stash/publish", token, body);
   const deviationId = typeof published.deviationid === "string" ? published.deviationid : "";
   if (!deviationId) throw new Error("Publish did not return a deviation.");
@@ -890,7 +950,7 @@ async function tick() {
   if (Date.now() < holdUntil()) return;
   if (Date.now() < nextAt()) return;
   const row = database().prepare(
-    "SELECT id, name, status, title, tags, error, itemid, url, deviation_id, created_at, mature, ai, noai, galleries, feature FROM posts WHERE status IN ('waiting', 'submitted') ORDER BY sort ASC, created_at ASC LIMIT 1",
+    "SELECT id, name, status, title, tags, error, itemid, url, deviation_id, created_at, mature, ai, noai, galleries, feature, display_resolution, width FROM posts WHERE status IN ('waiting', 'submitted') ORDER BY sort ASC, created_at ASC LIMIT 1",
   ).get() as PostRow | undefined;
   if (!row) return;
   serverGlobals.__deviantlabTicking = true;
@@ -905,10 +965,12 @@ async function publishNow(id: string): Promise<string> {
   if (serverGlobals.__deviantlabTicking) return "Already publishing a file.";
   if (Date.now() < holdUntil()) return kvGet("holdReason") || "The queue is waiting.";
   const row = database().prepare(
-    "SELECT id, name, status, title, tags, error, itemid, url, deviation_id, created_at, mature, ai, noai, galleries, feature FROM posts WHERE id = ?",
+    "SELECT id, name, status, title, tags, error, itemid, url, deviation_id, created_at, mature, ai, noai, galleries, feature, display_resolution, width FROM posts WHERE id = ?",
   ).get(id) as PostRow | undefined;
   if (!row) return "missing";
-  if (row.status !== "waiting" && row.status !== "submitted" && row.status !== "failed") return "That file is not waiting.";
+  const queued = row.status === "waiting" || row.status === "submitted" || row.status === "failed";
+  const readyUpload = row.status === "review" && Number(row.studio) !== 1;
+  if (!queued && !readyUpload) return "That file is not ready to publish.";
   if (!row.title?.trim() || cleanTags(row.tags || "").length === 0) return "Add a title and tags first.";
   serverGlobals.__deviantlabTicking = true;
   try {
@@ -996,12 +1058,12 @@ export async function handleQueue(req: IncomingMessage, res: ServerResponse): Pr
     return true;
   }
   if (method === "PATCH" && id && url.pathname === `/da-queue/posts/${id}`) {
-    const body = JSON.parse((await readRaw(req)).toString("utf8")) as { title?: unknown; tags?: unknown; mature?: unknown; ai?: unknown; noai?: unknown; galleries?: unknown; feature?: unknown };
+    const body = JSON.parse((await readRaw(req)).toString("utf8")) as { title?: unknown; tags?: unknown; mature?: unknown; ai?: unknown; noai?: unknown; galleries?: unknown; feature?: unknown; displayResolution?: unknown };
     const ok = patchPost(
       id,
       typeof body.title === "string" ? body.title : "",
       typeof body.tags === "string" ? body.tags : "",
-      { mature: body.mature === true, ai: body.ai !== false, noai: body.noai === true, galleries: parseGalleryIds(body.galleries), feature: body.feature !== false },
+      { mature: body.mature === true, ai: body.ai !== false, noai: body.noai === true, galleries: parseGalleryIds(body.galleries), feature: body.feature !== false, displayResolution: displayResolutionOf(body.displayResolution) },
     );
     sendJson(res, ok ? 200 : 404, ok ? { ok: true } : { error: "missing" });
     return true;

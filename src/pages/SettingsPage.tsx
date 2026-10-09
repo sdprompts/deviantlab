@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { PageHeader } from "../components/PageHeader";
 import { useLab } from "../lab";
-import { folderLabel, loadGalleryFolders, type GalleryFolder } from "../lib/da/folders";
+import { folderLabel, isBuiltInFeatured, loadGalleryFolders, type GalleryFolder } from "../lib/da/folders";
 import { clearLocalStash } from "../lib/da/stash";
 import { clearQueueHistory } from "../lib/studio/queueClient";
 import {
@@ -20,6 +20,8 @@ import {
   tagCountOf,
   temperatureOf,
   visionForProvider,
+  displayResolutionOf,
+  displayWidths,
 } from "../lib/settings";
 
 const field = "h-8 w-full rounded-md border border-lab-line bg-lab px-3 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-zinc-500";
@@ -165,14 +167,27 @@ export function SettingsPage() {
               >
                 <option value="featured">Featured</option>
                 <option value="none">None</option>
-                {folders.map((folder) => (
+                {folders.filter((folder) => !isBuiltInFeatured(folder)).map((folder) => (
                   <option key={folder.id} value={folder.id}>{folderLabel(folder, folders)}</option>
                 ))}
                 {settings.defaultFolder !== "featured" && settings.defaultFolder !== "none" && !folders.some((folder) => folder.id === settings.defaultFolder) ? (
                   <option value={settings.defaultFolder}>Saved folder</option>
                 ) : null}
               </select>
-              <span className="mt-1 block text-zinc-500">{session ? "Checked on each new upload. You can change it on that file." : "Sign in to choose one of your gallery folders."}</span>
+              <span className="mt-1 block text-zinc-500">{session ? "Each box is its own gallery. You can check more than one, and you can change the checks on that file." : "Sign in to choose one of your gallery folders."}</span>
+            </label>
+            <label className="block pt-1 text-[12px] text-zinc-400">
+              Display width
+              <select
+                value={settings.displayResolution}
+                onChange={(event) => save("displayResolution", displayResolutionOf(event.target.value))}
+                className={`mt-1 ${field}`}
+              >
+                {displayWidths.map((width, index) => (
+                  <option key={index} value={index}>{width ? `${width} px wide` : "Original"}</option>
+                ))}
+              </select>
+              <span className="mt-1 block text-zinc-500">Copied onto each new upload. You can change it on that file. A width wider than the image publishes at the original size.</span>
             </label>
           </div>
           </Section>

@@ -21,6 +21,10 @@ export type QueuePost = {
   publishedAt: number;
   galleries: string[];
   feature: boolean;
+  displayResolution: number;
+  width: number;
+  height: number;
+  bytes: number;
 };
 
 export type QueueSnapshot = {
@@ -58,6 +62,7 @@ export function syncStudioConfig(settings: AppSettings, includeVision = false) {
     publishAi: settings.publishAi,
     publishNoai: settings.publishNoai,
     defaultFolder: settings.defaultFolder,
+    displayResolution: settings.displayResolution,
     visionEnabled: settings.visionEnabled,
     visionTemperature: settings.visionTemperature,
     visionTagCount: settings.visionTagCount,
@@ -120,7 +125,7 @@ export async function enqueueStudioFile(file: File, watermark = true, studio = f
   }
 }
 
-export async function updateQueuedPost(id: string, title: string, tags: string, flags: { mature: boolean; ai: boolean; noai: boolean; galleries: string[]; feature: boolean }): Promise<void> {
+export async function updateQueuedPost(id: string, title: string, tags: string, flags: { mature: boolean; ai: boolean; noai: boolean; galleries: string[]; feature: boolean; displayResolution: number }): Promise<void> {
   const response = await fetch(`/da-queue/posts/${id}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },

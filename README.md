@@ -72,11 +72,11 @@ The Uploads page has one drop box. The footer stays at the bottom of the window.
 
 A title and at least one tag are required before a file can join the queue or be sent to Sta.sh. You can type them, or let a vision model fill them in, then edit them.
 
-**Working** holds files that still need a title and tags. **Regenerate** asks the vision model again and replaces the title and tags. **Add to queue** schedules a publish. **Send to Stash** submits that file to Sta.sh instead. **Queued** holds files waiting for the schedule. **Published** lists files this app has published, newest first, with the date and time. **Sent to Stash** lists files submitted to Sta.sh.
+**Working** holds files that still need a title and tags. **Regenerate** asks the vision model again and replaces the title and tags. **Add to queue** schedules a publish. **Publish now** sends that one file immediately and leaves the schedule where it is. **Send to Stash** submits that file to Sta.sh instead. Each file shows its size in MB and its resolution in pixels. **Queued** holds files waiting for the schedule. **Published** lists files this app has published, newest first, with the date and time. **Sent to Stash** lists files submitted to Sta.sh.
 
 On Queued, **Cards** and **Thumbs** switch the layout. **Pause** stops later publishes and leaves the one already sending alone. **Shuffle** randomizes the files that are still waiting. **Publish now** sends one file and does not reset the schedule.
 
-**Folders** appear on a file that is going to be published. **Featured** starts checked. In Settings, **Default folder** chooses what is checked on each new upload: Featured, none, or one of your gallery folders. You can change the checks on that file. Send to Stash does not show folders, because those files are not published. If the folder list says the login is missing a permission, sign out and sign in again.
+**Folders** appear on a file that is going to be published. Each gallery is its own checkbox, including **Featured**. You can check more than one. In Settings, **Default folder** chooses what is checked on each new upload: Featured, none, or one of your galleries. **Display width** is the size DeviantArt shows, from Original through 1920 px wide. Original is the default. A width wider than the image publishes at the original size. You can change the folder and the display width on that file. Send to Stash does not show folders, because those files are not published. If the folder list says the login is missing a permission, sign out and sign in again.
 
 Originals on disk are not overwritten. Each sent file is re-encoded as a JPEG. Other metadata is stripped. The name or copyright line from Settings is added to the image metadata. When **No watermarks required** was unchecked, the watermark is placed in the corner and at the width chosen in Settings.
 
@@ -90,7 +90,7 @@ Settings uses two columns. **Publishing**, **Watermark**, and **History** stack 
 
 - **Post every** — minutes between publishes. The value is kept between 5 and 1440.
 - **Your name or copyright, added to the image metadata when sent** — what to type is a credit line, such as `© Your name`. When a file is sent, that text is stored inside the JPEG as its description metadata. It is separate from the description on the DeviantArt deviation. Leave it blank and no description metadata is written.
-- **Applied to each new upload** — **Mature**, **AI generated**, and **Do not include in third-party AI datasets** are copied onto each new file. **Default folder** is the folder checked on each new file. The choices are Featured, none, or one of your gallery folders. The checkboxes on that file are what get published. Changing these later does not change files already dropped.
+- **Applied to each new upload** — **Mature**, **AI generated**, and **Do not include in third-party AI datasets** are copied onto each new file. **Default folder** is the gallery checked on each new file. The choices are Featured, none, or one of your galleries. **Display width** is Original, or 400, 600, 800, 900, 1024, 1280, 1600, or 1920 px wide. Original is the default. The checks and the width on that file are what get published. Changing these later does not change files already dropped.
 
 ### Titles and tags
 

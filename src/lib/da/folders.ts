@@ -37,5 +37,10 @@ export async function loadGalleryFolders(username: string): Promise<GalleryFolde
 
 export function folderLabel(folder: GalleryFolder, folders: GalleryFolder[]): string {
   const parent = folders.find((item) => item.id === folder.parent);
-  return parent ? `${parent.name} / ${folder.name}` : folder.name;
+  if (!parent || isBuiltInFeatured(parent)) return folder.name;
+  return `${parent.name} / ${folder.name}`;
+}
+
+export function isBuiltInFeatured(folder: GalleryFolder): boolean {
+  return !folder.parent && folder.name.toLowerCase() === "featured";
 }
